@@ -5,11 +5,11 @@ import { getUserGroups } from "@/lib/queries";
 import { localDay } from "@/lib/dates";
 
 export const GET = route(async ({ user }) =>
-  ok({ groups: getUserGroups(user.id, localDay(new Date(), user.timezone)) }));
+  ok({ groups: await getUserGroups(user.id, localDay(new Date(), user.timezone)) }));
 
 export const POST = route(
   async ({ user, body }) => {
-    const result = createGroup(user.id, body.name, body.description ?? "", body.emoji ?? "🏆");
+    const result = await createGroup(user.id, body.name, body.description ?? "", body.emoji ?? "🏆");
     return result.ok ? ok({ id: result.id, invite_code: result.inviteCode }, 201) : fail(result.error);
   },
   {

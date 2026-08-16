@@ -1,10 +1,11 @@
-import { test, describe, before } from "node:test";
+import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 
-process.env.DATABASE_PATH = path.join(mkdtempSync(path.join(tmpdir(), "lifescore-int-")), "test.db");
+// In-process, in-memory Postgres. Deleting DATABASE_URL matters: without it a
+// developer with that variable exported would run this suite — including its
+// writes — against a real database.
+delete process.env.DATABASE_URL;
+process.env.PGLITE_MEMORY = "1";
 
 let db: typeof import("../src/lib/db.ts");
 let activities: typeof import("../src/lib/activities.ts");
@@ -17,6 +18,10 @@ let dates: typeof import("../src/lib/dates.ts");
 const TANMAY = { id: "USR_tanmay", timezone: "UTC" };
 const ARYAN = { id: "USR_aryan", timezone: "UTC" };
 
+async function activityBySlug(slug: string) {
+  return (await resolver.listActivities()).find((a) => a.slug === slug)!;
+}
+
 before(async () => {
   db = await import("../src/lib/db.ts");
   activities = await import("../src/lib/activities.ts");
@@ -26,9 +31,11 @@ before(async () => {
   validation = await import("../src/lib/validation.ts");
   dates = await import("../src/lib/dates.ts");
 
+  await resolver.listActivities(); // force schema + seed before inserting users
+
   const now = new Date().toISOString();
   for (const [id, name] of [[TANMAY.id, "Tanmay"], [ARYAN.id, "Aryan"]]) {
-    db.run(
+    await db.run(
       `INSERT INTO users (id, email, name, password_hash, avatar_hue, timezone, is_admin, created_at, updated_at)
        VALUES (?, ?, ?, 'x', 200, 'UTC', 0, ?, ?)`,
       id, `${name.toLowerCase()}@test.dev`, name, now, now,
@@ -36,14 +43,15 @@ before(async () => {
   }
 });
 
-function backend() {
-  return resolver.listActivities().find((activity) => activity.slug === "backend-development")!;
-}
+after(async () => {
+  await db.closeDb();
+});
 
 describe("logging an activity end to end", () => {
-  test("stores the server-calculated XP", () => {
-    const result = activities.createEntry(TANMAY, {
-      activityId: backend().id,
+  test("stores the server-calculated XP", async () => {
+    const backend = await activityBySlug("backend-development");
+    const result = await activities.createEntry(TANMAY, {
+      activityId: backend.id,
       durationMinutes: 240,
       rawText: "I worked on my startup backend for 4 hours.",
       method: "keyword",
@@ -52,9 +60,10 @@ describe("logging an activity end to end", () => {
     assert.equal(result.xp, 60);
   });
 
-  test("the same activity from another user scores identically", () => {
-    const result = activities.createEntry(ARYAN, {
-      activityId: backend().id,
+  test("the same activity from another user scores identically", async () => {
+    const backend = await activityBySlug("backend-development");
+    const result = await activities.createEntry(ARYAN, {
+      activityId: backend.id,
       durationMinutes: 240,
       rawText: "Built backend APIs for 4 hours.",
       method: "keyword",
@@ -63,8 +72,8 @@ describe("logging an activity end to end", () => {
     assert.equal(result.xp, 60);
   });
 
-  test("the row snapshots the rate and scoring version it was scored at", () => {
-    const row = db.get<{ base_xp_per_hour: number; scoring_version: number; xp: number }>(
+  test("the row snapshots the rate and scoring version it was scored at", async () => {
+    const row = await db.get<{ base_xp_per_hour: number; scoring_version: number; xp: number }>(
       `SELECT base_xp_per_hour, scoring_version, xp FROM activity_logs WHERE user_id = ? LIMIT 1`,
       TANMAY.id,
     );
@@ -73,60 +82,65 @@ describe("logging an activity end to end", () => {
     assert.equal(row?.xp, 60);
   });
 
-  test("re-pricing the taxonomy leaves historical entries untouched", () => {
-    db.run(`UPDATE activities SET base_xp_per_hour = 13, scoring_version = 2 WHERE id = ?`, backend().id);
+  test("re-pricing the taxonomy leaves historical entries untouched", async () => {
+    const backend = await activityBySlug("backend-development");
+    await db.run(`UPDATE activities SET base_xp_per_hour = 13, scoring_version = 2 WHERE id = ?`, backend.id);
     resolver.invalidateTaxonomyCache();
 
-    const historical = db.get<{ xp: number; scoring_version: number }>(
+    const historical = await db.get<{ xp: number; scoring_version: number }>(
       `SELECT xp, scoring_version FROM activity_logs WHERE user_id = ? LIMIT 1`, TANMAY.id,
     );
     assert.equal(historical?.xp, 60, "old entry must keep its original score");
     assert.equal(historical?.scoring_version, 1);
 
     // A new entry uses the new rate.
-    const fresh = activities.createEntry(TANMAY, {
-      activityId: backend().id, durationMinutes: 60, rawText: "backend for 1 hour",
+    const fresh = await activities.createEntry(TANMAY, {
+      activityId: backend.id, durationMinutes: 60, rawText: "backend for 1 hour",
     });
     assert.ok(fresh.ok);
     assert.equal(fresh.xp, 13);
 
-    db.run(`UPDATE activities SET base_xp_per_hour = 15, scoring_version = 1 WHERE id = ?`, backend().id);
+    await db.run(`UPDATE activities SET base_xp_per_hour = 15, scoring_version = 1 WHERE id = ?`, backend.id);
     resolver.invalidateTaxonomyCache();
   });
 
-  test("editing re-scores through the engine", () => {
-    const created = activities.createEntry(ARYAN, {
-      activityId: backend().id, durationMinutes: 60, rawText: "backend for 1 hour",
+  test("editing re-scores through the engine", async () => {
+    const backend = await activityBySlug("backend-development");
+    const created = await activities.createEntry(ARYAN, {
+      activityId: backend.id, durationMinutes: 60, rawText: "backend for 1 hour",
     });
     assert.ok(created.ok);
 
-    const updated = activities.updateEntry(ARYAN.id, created.id, { durationMinutes: 120 });
+    const updated = await activities.updateEntry(ARYAN.id, created.id, { durationMinutes: 120 });
     assert.ok(updated.ok);
     assert.equal(updated.xp, 30);
   });
 
-  test("deleting removes the entry and its XP", () => {
-    const created = activities.createEntry(ARYAN, {
-      activityId: backend().id, durationMinutes: 30, rawText: "quick backend fix",
+  test("deleting removes the entry and its XP", async () => {
+    const backend = await activityBySlug("backend-development");
+    const created = await activities.createEntry(ARYAN, {
+      activityId: backend.id, durationMinutes: 30, rawText: "quick backend fix",
     });
     assert.ok(created.ok);
-    const before = queries.getTotals(ARYAN.id, dates.localDay(new Date(), "UTC")).lifetime;
-    assert.ok(activities.deleteEntry(ARYAN.id, created.id));
-    const after = queries.getTotals(ARYAN.id, dates.localDay(new Date(), "UTC")).lifetime;
+    const today = dates.localDay(new Date(), "UTC");
+    const before = (await queries.getTotals(ARYAN.id, today)).lifetime;
+    assert.ok(await activities.deleteEntry(ARYAN.id, created.id));
+    const after = (await queries.getTotals(ARYAN.id, today)).lifetime;
     assert.equal(after, before - created.xp);
   });
 
-  test("you cannot delete someone else's entry", () => {
-    const created = activities.createEntry(ARYAN, {
-      activityId: backend().id, durationMinutes: 30, rawText: "backend",
+  test("you cannot delete someone else's entry", async () => {
+    const backend = await activityBySlug("backend-development");
+    const created = await activities.createEntry(ARYAN, {
+      activityId: backend.id, durationMinutes: 30, rawText: "backend",
     });
     assert.ok(created.ok);
-    assert.equal(activities.deleteEntry(TANMAY.id, created.id), false);
-    assert.ok(activities.deleteEntry(ARYAN.id, created.id));
+    assert.equal(await activities.deleteEntry(TANMAY.id, created.id), false);
+    assert.ok(await activities.deleteEntry(ARYAN.id, created.id));
   });
 
-  test("an unknown activity id is refused", () => {
-    const result = activities.createEntry(TANMAY, {
+  test("an unknown activity id is refused", async () => {
+    const result = await activities.createEntry(TANMAY, {
       activityId: "ACT_99999", durationMinutes: 60, rawText: "nope",
     });
     assert.equal(result.ok, false);
@@ -163,9 +177,10 @@ describe("anti-gaming", () => {
     assert.equal(issue?.code, "possible_duplicate");
   });
 
-  test("the server refuses an oversized entry even when asked nicely", () => {
-    const result = activities.createEntry(TANMAY, {
-      activityId: backend().id, durationMinutes: 1440, rawText: "coded all day and then some",
+  test("the server refuses an oversized entry even when asked nicely", async () => {
+    const backend = await activityBySlug("backend-development");
+    const result = await activities.createEntry(TANMAY, {
+      activityId: backend.id, durationMinutes: 1440, rawText: "coded all day and then some",
     }, { acknowledged: true });
     // 24h alone is allowed only if the day is empty; this user has already logged.
     assert.equal(result.ok, false);
@@ -176,83 +191,16 @@ describe("anti-gaming", () => {
   });
 });
 
-describe("groups and leaderboards", () => {
-  test("creating a group makes the creator its owner and first member", () => {
-    const result = groups.createGroup(TANMAY.id, "VIT Grind");
-    assert.ok(result.ok);
-    const today = dates.localDay(new Date(), "UTC");
-    const mine = queries.getUserGroups(TANMAY.id, today);
-    assert.equal(mine.length, 1);
-    assert.equal(mine[0].name, "VIT Grind");
-    assert.equal(mine[0].members, 1);
-  });
-
-  test("a friend can join with the invite code", () => {
-    const created = groups.createGroup(TANMAY.id, "Startup Builders");
-    assert.ok(created.ok);
-    const joined = groups.joinGroup(ARYAN.id, created.inviteCode);
-    assert.ok(joined.ok);
-
-    const board = queries.getGroupLeaderboard(created.id, "all", dates.localDay(new Date(), "UTC"));
-    assert.equal(board.length, 2);
-  });
-
-  test("a wrong invite code joins nothing", () => {
-    assert.equal(groups.joinGroup(ARYAN.id, "NOPENOPE").ok, false);
-  });
-
-  test("the leaderboard is ordered by server-calculated XP", () => {
-    const created = groups.createGroup(TANMAY.id, "Leaderboard Test");
-    assert.ok(created.ok);
-    groups.joinGroup(ARYAN.id, created.inviteCode);
-
-    const board = queries.getGroupLeaderboard(created.id, "all", dates.localDay(new Date(), "UTC"));
-    for (let i = 1; i < board.length; i++) assert.ok(board[i - 1].xp >= board[i].xp);
-
-    // Every total matches a fresh SUM straight from the database.
-    for (const row of board) {
-      const actual = db.get<{ total: number }>(
-        `SELECT COALESCE(SUM(xp), 0) AS total FROM activity_logs WHERE user_id = ?`, row.user_id,
-      )!.total;
-      assert.equal(row.xp, actual);
-    }
-  });
-
-  test("non-members are not on a group's leaderboard", () => {
-    const created = groups.createGroup(TANMAY.id, "Private Group");
-    assert.ok(created.ok);
-    const board = queries.getGroupLeaderboard(created.id, "all", dates.localDay(new Date(), "UTC"));
-    assert.equal(board.length, 1);
-    assert.equal(queries.isMember(created.id, ARYAN.id), false);
-  });
-
-  test("ownership passes on when the owner leaves", () => {
-    const created = groups.createGroup(TANMAY.id, "Succession");
-    assert.ok(created.ok);
-    groups.joinGroup(ARYAN.id, created.inviteCode);
-
-    assert.ok(groups.leaveGroup(TANMAY.id, created.id).ok);
-    assert.equal(queries.getGroup(created.id)?.owner_id, ARYAN.id);
-  });
-
-  test("the last member leaving removes the group", () => {
-    const created = groups.createGroup(TANMAY.id, "Solo");
-    assert.ok(created.ok);
-    assert.ok(groups.leaveGroup(TANMAY.id, created.id).ok);
-    assert.equal(queries.getGroup(created.id), undefined);
-  });
-});
-
 describe("activities the taxonomy doesn't know", () => {
-  test("an unrecognised phrase resolves to nothing rather than a guess", () => {
-    assert.equal(resolver.resolveDeterministic("quilling for 1 hour", TANMAY.id), null);
+  test("an unrecognised phrase resolves to nothing rather than a guess", async () => {
+    assert.equal(await resolver.resolveDeterministic("quilling for 1 hour", TANMAY.id), null);
   });
 
-  test("picking it manually teaches that user's phrasing for next time", () => {
-    const crafts = resolver.listActivities().find((a) => a.slug === "crafting")!;
+  test("picking it manually teaches that user's phrasing for next time", async () => {
+    const crafts = await activityBySlug("crafting");
 
     // What the UI does when the user chooses an activity themselves.
-    const created = activities.createEntry(TANMAY, {
+    const created = await activities.createEntry(TANMAY, {
       activityId: crafts.id,
       durationMinutes: 60,
       rawText: "quilling for 1 hour",
@@ -261,45 +209,45 @@ describe("activities the taxonomy doesn't know", () => {
     assert.ok(created.ok);
 
     // Same words next time now resolve on their own, with no model involved.
-    const again = resolver.resolveDeterministic("quilling for 2 hours", TANMAY.id);
+    const again = await resolver.resolveDeterministic("quilling for 2 hours", TANMAY.id);
     assert.ok(again, "the phrase should be remembered");
     assert.equal(again.activity.id, crafts.id);
     assert.equal(again.method, "memory");
 
     // ...but only for this user. Memory never leaks between accounts.
-    assert.equal(resolver.resolveDeterministic("quilling for 2 hours", ARYAN.id), null);
+    assert.equal(await resolver.resolveDeterministic("quilling for 2 hours", ARYAN.id), null);
   });
 
-  test("memory survives different wording of the same thing", () => {
-    const ai = resolver.listActivities().find((a) => a.slug === "ai-ml-development")!;
+  test("memory survives different wording of the same thing", async () => {
+    const ai = await activityBySlug("ai-ml-development");
 
     // The spec's example: teach it once, then refer to it differently.
-    const created = activities.createEntry(TANMAY, {
+    const created = await activities.createEntry(TANMAY, {
       activityId: ai.id, durationMinutes: 60,
       rawText: "Worked on TinyFish integration", method: "manual",
     });
     assert.ok(created.ok);
 
-    const later = resolver.resolveDeterministic("Spent 3 hours on TinyFish", TANMAY.id);
+    const later = await resolver.resolveDeterministic("Spent 3 hours on TinyFish", TANMAY.id);
     assert.ok(later, "a shorter reference to the same thing should be recognised");
     assert.equal(later.activity.id, ai.id);
     assert.equal(later.method, "memory");
   });
 
-  test("unrelated phrases never collide in memory", () => {
-    assert.equal(resolver.resolveDeterministic("blorptastic wibbling", TANMAY.id), null);
+  test("unrelated phrases never collide in memory", async () => {
+    assert.equal(await resolver.resolveDeterministic("blorptastic wibbling", TANMAY.id), null);
   });
 
-  test("a remembered phrase still uses the one shared rate, not a personal one", () => {
-    const crafts = resolver.listActivities().find((a) => a.slug === "crafting")!;
-    const remembered = resolver.resolveDeterministic("quilling for 2 hours", TANMAY.id)!;
+  test("a remembered phrase still uses the one shared rate, not a personal one", async () => {
+    const crafts = await activityBySlug("crafting");
+    const remembered = (await resolver.resolveDeterministic("quilling for 2 hours", TANMAY.id))!;
     assert.equal(remembered.activity.base_xp_per_hour, crafts.base_xp_per_hour);
 
     // Tanmay's remembered phrasing and Aryan's explicit pick score identically.
-    const mine = activities.createEntry(TANMAY, {
+    const mine = await activities.createEntry(TANMAY, {
       activityId: remembered.activity.id, durationMinutes: 120, rawText: "quilling for 2 hours",
     });
-    const theirs = activities.createEntry(ARYAN, {
+    const theirs = await activities.createEntry(ARYAN, {
       activityId: crafts.id, durationMinutes: 120, rawText: "paper craft for 2 hours",
     });
     assert.ok(mine.ok && theirs.ok);
@@ -311,25 +259,25 @@ describe("re-seeding an existing database", () => {
   test("is idempotent, keeps activity ids stable, and leaves history intact", async () => {
     const { seedTaxonomy } = await import("../src/lib/seed.ts");
 
-    const before = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM activities`)!.n;
+    const before = (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM activities`))!.n;
     const idsBefore = new Map(
-      db.all<{ id: string; slug: string }>(`SELECT id, slug FROM activities`).map((r) => [r.slug, r.id]),
+      (await db.all<{ id: string; slug: string }>(`SELECT id, slug FROM activities`)).map((r) => [r.slug, r.id]),
     );
-    const logsBefore = db.all<{ id: string; activity_id: string; xp: number }>(
+    const logsBefore = await db.all<{ id: string; activity_id: string; xp: number }>(
       `SELECT id, activity_id, xp FROM activity_logs ORDER BY id`,
     );
 
-    seedTaxonomy();
+    await seedTaxonomy();
     resolver.invalidateTaxonomyCache();
 
-    assert.equal(db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM activities`)!.n, before, "no duplicates");
+    assert.equal((await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM activities`))!.n, before, "no duplicates");
 
     for (const [slug, id] of idsBefore) {
-      const now = db.get<{ id: string }>(`SELECT id FROM activities WHERE slug = ?`, slug);
+      const now = await db.get<{ id: string }>(`SELECT id FROM activities WHERE slug = ?`, slug);
       assert.equal(now?.id, id, `${slug} changed id — existing logs would repoint`);
     }
 
-    const logsAfter = db.all<{ id: string; activity_id: string; xp: number }>(
+    const logsAfter = await db.all<{ id: string; activity_id: string; xp: number }>(
       `SELECT id, activity_id, xp FROM activity_logs ORDER BY id`,
     );
     assert.deepEqual(logsAfter, logsBefore, "history must be untouched");
@@ -340,82 +288,145 @@ describe("rest and leisure", () => {
   // A fresh user so the streak assertions aren't polluted by other tests.
   const SLEEPER = { id: "USR_sleeper", timezone: "UTC" };
 
-  before(() => {
+  before(async () => {
     const now = new Date().toISOString();
-    db.run(
+    await db.run(
       `INSERT INTO users (id, email, name, password_hash, avatar_hue, timezone, is_admin, created_at, updated_at)
        VALUES (?, 'sleeper@test.dev', 'Sleeper', 'x', 100, 'UTC', 0, ?, ?)`,
       SLEEPER.id, now, now,
     );
   });
 
-  function activity(slug: string) {
-    return resolver.listActivities().find((a) => a.slug === slug)!;
-  }
-
-  test("sleep is logged, and earns nothing", () => {
-    const result = activities.createEntry(SLEEPER, {
-      activityId: activity("sleep").id, durationMinutes: 480, rawText: "slept 8 hours",
+  test("sleep is logged, and earns nothing", async () => {
+    const result = await activities.createEntry(SLEEPER, {
+      activityId: (await activityBySlug("sleep")).id, durationMinutes: 480, rawText: "slept 8 hours",
     });
     assert.ok(result.ok);
     assert.equal(result.xp, 0);
   });
 
-  test("a whole day of passive leisure does not hold a streak", () => {
+  test("a whole day of passive leisure does not hold a streak", async () => {
     const today = dates.localDay(new Date(), "UTC");
     // 8h of TV plus 3h of scrolling — 19 XP, comfortably over the threshold.
-    activities.createEntry(SLEEPER, {
-      activityId: activity("watching").id, durationMinutes: 480, rawText: "watched tv all day",
+    await activities.createEntry(SLEEPER, {
+      activityId: (await activityBySlug("watching")).id, durationMinutes: 480, rawText: "watched tv all day",
     });
-    activities.createEntry(SLEEPER, {
-      activityId: activity("browsing").id, durationMinutes: 180, rawText: "scrolling",
+    await activities.createEntry(SLEEPER, {
+      activityId: (await activityBySlug("browsing")).id, durationMinutes: 180, rawText: "scrolling",
     });
 
-    const totals = queries.getTotals(SLEEPER.id, today);
+    const totals = await queries.getTotals(SLEEPER.id, today);
     assert.ok(totals.today >= 10, "the XP is real and counts toward level and leaderboard");
-    assert.equal(queries.getStreak(SLEEPER.id, today).current, 0, "but it is not showing up");
+    assert.equal((await queries.getStreak(SLEEPER.id, today)).current, 0, "but it is not showing up");
   });
 
-  test("one real activity that same day does hold the streak", () => {
+  test("one real activity that same day does hold the streak", async () => {
     const today = dates.localDay(new Date(), "UTC");
-    activities.createEntry(SLEEPER, {
-      activityId: activity("gym").id, durationMinutes: 60, rawText: "gym for an hour",
+    await activities.createEntry(SLEEPER, {
+      activityId: (await activityBySlug("gym")).id, durationMinutes: 60, rawText: "gym for an hour",
     });
-    assert.equal(queries.getStreak(SLEEPER.id, today).current, 1);
+    assert.equal((await queries.getStreak(SLEEPER.id, today)).current, 1);
   });
 
-  test("leisure XP still counts toward the leaderboard", () => {
+  test("leisure XP still counts toward the leaderboard", async () => {
     const today = dates.localDay(new Date(), "UTC");
-    const totals = queries.getTotals(SLEEPER.id, today);
+    const totals = await queries.getTotals(SLEEPER.id, today);
     // 0 (sleep) + 16 (8h TV) + 3 (3h browsing) + 20 (1h gym)
     assert.equal(totals.lifetime, 39);
   });
 });
 
-describe("dashboard totals", () => {
-  test("today, week and lifetime agree with the raw rows", () => {
+describe("groups and leaderboards", () => {
+  test("creating a group makes the creator its owner and first member", async () => {
+    const result = await groups.createGroup(TANMAY.id, "VIT Grind");
+    assert.ok(result.ok);
     const today = dates.localDay(new Date(), "UTC");
-    const totals = queries.getTotals(TANMAY.id, today);
-    const raw = db.get<{ total: number; count: number }>(
+    const mine = await queries.getUserGroups(TANMAY.id, today);
+    assert.equal(mine.length, 1);
+    assert.equal(mine[0].name, "VIT Grind");
+    assert.equal(mine[0].members, 1);
+  });
+
+  test("a friend can join with the invite code", async () => {
+    const created = await groups.createGroup(TANMAY.id, "Startup Builders");
+    assert.ok(created.ok);
+    const joined = await groups.joinGroup(ARYAN.id, created.inviteCode);
+    assert.ok(joined.ok);
+
+    const board = await queries.getGroupLeaderboard(created.id, "all", dates.localDay(new Date(), "UTC"));
+    assert.equal(board.length, 2);
+  });
+
+  test("a wrong invite code joins nothing", async () => {
+    assert.equal((await groups.joinGroup(ARYAN.id, "NOPENOPE")).ok, false);
+  });
+
+  test("the leaderboard is ordered by server-calculated XP", async () => {
+    const created = await groups.createGroup(TANMAY.id, "Leaderboard Test");
+    assert.ok(created.ok);
+    await groups.joinGroup(ARYAN.id, created.inviteCode);
+
+    const board = await queries.getGroupLeaderboard(created.id, "all", dates.localDay(new Date(), "UTC"));
+    for (let i = 1; i < board.length; i++) assert.ok(board[i - 1].xp >= board[i].xp);
+
+    // Every total matches a fresh SUM straight from the database.
+    for (const row of board) {
+      const actual = (await db.get<{ total: number }>(
+        `SELECT COALESCE(SUM(xp), 0) AS total FROM activity_logs WHERE user_id = ?`, row.user_id,
+      ))!.total;
+      assert.equal(row.xp, actual);
+    }
+  });
+
+  test("non-members are not on a group's leaderboard", async () => {
+    const created = await groups.createGroup(TANMAY.id, "Private Group");
+    assert.ok(created.ok);
+    const board = await queries.getGroupLeaderboard(created.id, "all", dates.localDay(new Date(), "UTC"));
+    assert.equal(board.length, 1);
+    assert.equal(await queries.isMember(created.id, ARYAN.id), false);
+  });
+
+  test("ownership passes on when the owner leaves", async () => {
+    const created = await groups.createGroup(TANMAY.id, "Succession");
+    assert.ok(created.ok);
+    await groups.joinGroup(ARYAN.id, created.inviteCode);
+
+    assert.ok((await groups.leaveGroup(TANMAY.id, created.id)).ok);
+    assert.equal((await queries.getGroup(created.id))?.owner_id, ARYAN.id);
+  });
+
+  test("the last member leaving removes the group", async () => {
+    const created = await groups.createGroup(TANMAY.id, "Solo");
+    assert.ok(created.ok);
+    assert.ok((await groups.leaveGroup(TANMAY.id, created.id)).ok);
+    assert.equal(await queries.getGroup(created.id), undefined);
+  });
+});
+
+describe("dashboard totals", () => {
+  test("today, week and lifetime agree with the raw rows", async () => {
+    const today = dates.localDay(new Date(), "UTC");
+    const totals = await queries.getTotals(TANMAY.id, today);
+    const raw = (await db.get<{ total: number; count: number }>(
       `SELECT COALESCE(SUM(xp), 0) AS total, COUNT(*) AS count FROM activity_logs WHERE user_id = ?`,
       TANMAY.id,
-    )!;
+    ))!;
     assert.equal(totals.lifetime, raw.total);
     assert.equal(totals.entries, raw.count);
     assert.equal(totals.today, raw.total, "all test entries were logged today");
   });
 
-  test("personal memory records the phrasing without changing anyone's score", () => {
-    const phrase = db.get<{ activity_id: string }>(
+  test("personal memory records the phrasing without changing anyone's score", async () => {
+    const phrase = await db.get<{ activity_id: string }>(
       `SELECT activity_id FROM user_activity_memory WHERE user_id = ? LIMIT 1`, TANMAY.id,
     );
     assert.ok(phrase, "phrases should be remembered");
 
     // The remembered activity still carries the one shared rate.
-    const activity = resolver.getActivity(phrase.activity_id)!;
-    const shared = db.get<{ base_xp_per_hour: number }>(
+    const activity = (await resolver.getActivity(phrase.activity_id))!;
+    const shared = (await db.get<{ base_xp_per_hour: number }>(
       `SELECT base_xp_per_hour FROM activities WHERE id = ?`, phrase.activity_id,
-    )!;
+    ))!;
     assert.equal(activity.base_xp_per_hour, shared.base_xp_per_hour);
   });
 });

@@ -12,8 +12,10 @@ export const dynamic = "force-dynamic";
 export default async function GroupsPage() {
   const user = await requireUser();
   const today = localDay(new Date(), user.timezone);
-  const groups = getUserGroups(user.id, today);
-  const global = getGlobalLeaderboard("week", today);
+  const [groups, global] = await Promise.all([
+    getUserGroups(user.id, today),
+    getGlobalLeaderboard("week", today),
+  ]);
 
   return (
     <div className="space-y-6">

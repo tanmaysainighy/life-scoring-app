@@ -6,7 +6,7 @@ import { invalidate } from "@/lib/cache";
 /** Edits re-score through the same engine; the client still can't send XP. */
 export const PATCH = route(
   async ({ user, body, params }) => {
-    const result = updateEntry(user.id, params.id, {
+    const result = await updateEntry(user.id, params.id, {
       activityId: body.activity_id,
       durationMinutes: body.duration_minutes,
       rawText: body.raw_text,
@@ -28,7 +28,7 @@ export const PATCH = route(
 );
 
 export const DELETE = route(async ({ user, params }) => {
-  if (!deleteEntry(user.id, params.id)) return fail("That entry no longer exists.", 404, "not_found");
+  if (!(await deleteEntry(user.id, params.id))) return fail("That entry no longer exists.", 404, "not_found");
   invalidate(`groups:${user.id}`);
   invalidate("lb:");
   return ok({ deleted: true });

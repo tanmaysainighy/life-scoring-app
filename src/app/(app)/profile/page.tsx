@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ProfilePage() {
   const user = await requireUser();
-  const { totals, streak, level, series, categories, topActivities, groups, achievements } = getProfile(user);
+  const { totals, streak, level, series, categories, topActivities, groups, achievements } = await getProfile(user);
   const unlocked = achievements.filter((achievement) => achievement.unlocked);
 
   return (

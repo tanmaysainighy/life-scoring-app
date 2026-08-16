@@ -7,9 +7,9 @@ import { get } from "@/lib/db";
  */
 export const dynamic = "force-dynamic";
 
-export function GET() {
+export async function GET() {
   try {
-    const activities = get<{ n: number }>(`SELECT COUNT(*) AS n FROM activities`)?.n ?? 0;
+    const activities = (await get<{ n: number }>(`SELECT COUNT(*) AS n FROM activities`))?.n ?? 0;
     if (activities === 0) {
       return Response.json({ status: "degraded", reason: "taxonomy not seeded" }, { status: 503 });
     }

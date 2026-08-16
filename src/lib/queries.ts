@@ -1,5 +1,5 @@
-import "./seed";
 import { all, get } from "./db";
+import { ensureSeeded } from "./seed";
 import { localDay, startOfWeek, startOfMonth, addDays } from "./dates";
 import { computeStreak, MIN_STREAK_XP, NON_STREAK_CATEGORY } from "./streak";
 import { getLevelProgress } from "./levels";
@@ -38,8 +38,8 @@ const LOG_SELECT = `
     JOIN activities a ON a.id = l.activity_id`;
 
 /** Today / week / month / lifetime in a single pass over the user's index. */
-export function getTotals(userId: string, today: string) {
-  const row = get<{
+export async function getTotals(userId: string, today: string) {
+  const row = await get<{
     today: number; week: number; month: number; lifetime: number;
     entries: number; distinct_activities: number; total_minutes: number;
   }>(
@@ -64,40 +64,40 @@ export function getTotals(userId: string, today: string) {
  * Rest-category activities are excluded, so a long night's sleep or a TV binge
  * is still tracked but never keeps a streak alive on its own.
  */
-export function getStreak(userId: string, today: string) {
-  const days = all<{ local_day: string }>(
+export async function getStreak(userId: string, today: string) {
+  const rows = await all<{ local_day: string }>(
     `SELECT l.local_day
        FROM activity_logs l
        JOIN activities a ON a.id = l.activity_id
       WHERE l.user_id = ? AND a.category != ?
       GROUP BY l.local_day HAVING SUM(l.xp) >= ?`,
     userId, NON_STREAK_CATEGORY, MIN_STREAK_XP,
-  ).map((row) => row.local_day);
-  return computeStreak(days, today);
+  );
+  return computeStreak(rows.map((row) => row.local_day), today);
 }
 
-export function getLogsForDay(userId: string, day: string): LogRow[] {
+export function getLogsForDay(userId: string, day: string): Promise<LogRow[]> {
   return all<LogRow>(
     `${LOG_SELECT} WHERE l.user_id = ? AND l.local_day = ? ORDER BY l.created_at DESC`,
     userId, day,
   );
 }
 
-export function getRecentLogs(userId: string, limit = 50, offset = 0): LogRow[] {
+export function getRecentLogs(userId: string, limit = 50, offset = 0): Promise<LogRow[]> {
   return all<LogRow>(
     `${LOG_SELECT} WHERE l.user_id = ? ORDER BY l.created_at DESC LIMIT ? OFFSET ?`,
     userId, limit, offset,
   );
 }
 
-export function getLog(userId: string, logId: string): LogRow | undefined {
+export function getLog(userId: string, logId: string): Promise<LogRow | undefined> {
   return get<LogRow>(`${LOG_SELECT} WHERE l.user_id = ? AND l.id = ?`, userId, logId);
 }
 
 /** XP per day for the last `days` days, zero-filled for the chart. */
-export function getDailySeries(userId: string, today: string, days = 14) {
+export async function getDailySeries(userId: string, today: string, days = 14) {
   const from = addDays(today, -(days - 1));
-  const rows = all<{ local_day: string; xp: number }>(
+  const rows = await all<{ local_day: string; xp: number }>(
     `SELECT local_day, SUM(xp) AS xp FROM activity_logs
       WHERE user_id = ? AND local_day >= ? GROUP BY local_day`,
     userId, from,
@@ -124,7 +124,7 @@ export function getTopActivities(userId: string, limit = 6) {
     `SELECT a.name, a.icon, SUM(l.xp) AS xp, SUM(l.duration_minutes) AS minutes, COUNT(*) AS count
        FROM activity_logs l JOIN activities a ON a.id = l.activity_id
       WHERE l.user_id = ?
-      GROUP BY a.id ORDER BY xp DESC LIMIT ?`,
+      GROUP BY a.id, a.name, a.icon ORDER BY xp DESC LIMIT ?`,
     userId, limit,
   );
 }
@@ -137,7 +137,7 @@ export type GroupSummary = {
 };
 
 /** Every group the user is in, with their current weekly rank. One query. */
-export function getUserGroups(userId: string, today: string): GroupSummary[] {
+export function getUserGroups(userId: string, today: string): Promise<GroupSummary[]> {
   return cached(`groups:${userId}:${today}`, 10_000, () =>
     all<GroupSummary>(
       `WITH mine AS (SELECT group_id FROM group_members WHERE user_id = ?),
@@ -185,7 +185,7 @@ export type LeaderboardRow = {
  */
 export function getGroupLeaderboard(
   groupId: string, period: LeaderboardPeriod, today: string,
-): LeaderboardRow[] {
+): Promise<LeaderboardRow[]> {
   return cached(`lb:${groupId}:${period}:${today}`, 15_000, () =>
     all<LeaderboardRow>(
       `SELECT u.id AS user_id, u.name, u.avatar_hue,
@@ -195,7 +195,7 @@ export function getGroupLeaderboard(
          JOIN users u ON u.id = gm.user_id
          LEFT JOIN activity_logs l ON l.user_id = gm.user_id AND l.local_day >= ?
         WHERE gm.group_id = ?
-        GROUP BY u.id
+        GROUP BY u.id, u.name, u.avatar_hue
         ORDER BY xp DESC, u.name ASC
         LIMIT 100`,
       periodStart(period, today), groupId,
@@ -204,14 +204,16 @@ export function getGroupLeaderboard(
 }
 
 /** Global leaderboard across all users. */
-export function getGlobalLeaderboard(period: LeaderboardPeriod, today: string): LeaderboardRow[] {
+export function getGlobalLeaderboard(
+  period: LeaderboardPeriod, today: string,
+): Promise<LeaderboardRow[]> {
   return cached(`lb:global:${period}:${today}`, 30_000, () =>
     all<LeaderboardRow>(
       `SELECT u.id AS user_id, u.name, u.avatar_hue,
               COALESCE(SUM(l.xp), 0) AS xp, COUNT(l.id) AS entries
          FROM users u
          LEFT JOIN activity_logs l ON l.user_id = u.id AND l.local_day >= ?
-        GROUP BY u.id
+        GROUP BY u.id, u.name, u.avatar_hue
         ORDER BY xp DESC, u.name ASC
         LIMIT 50`,
       periodStart(period, today),
@@ -226,30 +228,43 @@ export function getGroup(groupId: string) {
   );
 }
 
-export function isMember(groupId: string, userId: string): boolean {
-  return Boolean(get(`SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?`, groupId, userId));
+export async function isMember(groupId: string, userId: string): Promise<boolean> {
+  return Boolean(await get(`SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?`, groupId, userId));
 }
 
 // --- composed views -------------------------------------------------------
 
-/** Everything the dashboard renders, gathered in one server pass. */
-export function getDashboard(user: SessionUser) {
+/**
+ * Everything the dashboard renders, gathered in one server pass.
+ * The independent queries run concurrently rather than in a waterfall.
+ */
+export async function getDashboard(user: SessionUser) {
+  await ensureSeeded();
   const today = localDay(new Date(), user.timezone);
-  const totals = getTotals(user.id, today);
-  return {
-    today,
-    totals,
-    streak: getStreak(user.id, today),
-    level: getLevelProgress(totals.lifetime),
-    logs: getLogsForDay(user.id, today),
-    groups: getUserGroups(user.id, today),
-  };
+
+  const [totals, streak, logs, groups] = await Promise.all([
+    getTotals(user.id, today),
+    getStreak(user.id, today),
+    getLogsForDay(user.id, today),
+    getUserGroups(user.id, today),
+  ]);
+
+  return { today, totals, streak, level: getLevelProgress(totals.lifetime), logs, groups };
 }
 
-export function getProfile(user: SessionUser) {
+export async function getProfile(user: SessionUser) {
+  await ensureSeeded();
   const today = localDay(new Date(), user.timezone);
-  const totals = getTotals(user.id, today);
-  const streak = getStreak(user.id, today);
+
+  const [totals, streak, series, categories, topActivities, groups] = await Promise.all([
+    getTotals(user.id, today),
+    getStreak(user.id, today),
+    getDailySeries(user.id, today, 14),
+    getCategoryBreakdown(user.id),
+    getTopActivities(user.id),
+    getUserGroups(user.id, today),
+  ]);
+
   const level = getLevelProgress(totals.lifetime);
   const earned = evaluateAchievements({
     lifetimeXp: totals.lifetime,
@@ -262,11 +277,7 @@ export function getProfile(user: SessionUser) {
   const earnedIds = new Set(earned.map((achievement) => achievement.id));
 
   return {
-    today, totals, streak, level,
-    series: getDailySeries(user.id, today, 14),
-    categories: getCategoryBreakdown(user.id),
-    topActivities: getTopActivities(user.id),
-    groups: getUserGroups(user.id, today),
+    today, totals, streak, level, series, categories, topActivities, groups,
     achievements: ACHIEVEMENTS.map(({ earned: _earned, ...rest }) => ({
       ...rest, unlocked: earnedIds.has(rest.id),
     })),

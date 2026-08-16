@@ -1,4 +1,4 @@
-import { nextActivityId } from "./seed";
+import { ensureSeeded, nextActivityId } from "./seed";
 import { all, get, run } from "./db";
 import { normalize, tokenize, similarity, slugify } from "./text";
 import { deriveXpRate } from "./scoring";
@@ -8,12 +8,13 @@ import { deriveXpRate } from "./scoring";
  *
  * The cascade runs cheapest-first and stops as soon as it is confident:
  *
- *   normalize → exact alias → personal memory → alias-in-text → token similarity
- *                                                                    ↓ (unsure)
- *                                                              LLM classification
+ *   normalize → exact alias → stemmed alias → personal memory → alias-in-text
+ *             → token similarity
+ *                                                                ↓ (unsure)
+ *                                                          LLM classification
  *
  * Only the last step costs money or latency, and most everyday phrasings never
- * reach it. The LLM is called by `analyze()` in activity-service.ts, not here —
+ * reach it. The LLM is called by `analyzeEntry` in activities.ts, not here —
  * this module is deterministic end to end.
  */
 
@@ -39,33 +40,37 @@ export type Resolution = {
 };
 
 // --- in-process taxonomy cache -------------------------------------------
-// ~100 rows that change only when an admin edits the taxonomy or a new activity
-// is derived. Reloading is a single indexed query, so invalidation is a flag.
+// ~110 rows that change only when the taxonomy is edited or a new activity is
+// derived, so this is loaded once and reused. Caching the *promise* means
+// concurrent requests during startup share a single load rather than racing.
 
 type CachedActivity = Activity & { tokens: Set<string> };
 
-let cache: {
+type Taxonomy = {
   activities: CachedActivity[];
+  byId: Map<string, CachedActivity>;
   aliases: Map<string, string>;
   stemmedAliases: Map<string, string>;
-} | null = null;
+};
+
+let cache: Promise<Taxonomy> | null = null;
 
 export function invalidateTaxonomyCache(): void {
   cache = null;
 }
 
-function taxonomy() {
-  if (cache) return cache;
+async function load(): Promise<Taxonomy> {
+  await ensureSeeded();
 
-  const activities = all<Activity>(
+  const activities = await all<Activity>(
     `SELECT id, name, slug, parent_id, category, base_xp_per_hour, icon, keywords,
             scoring_version, status
        FROM activities
       WHERE status = 'active'`,
   );
   // Ordered so the cache — and therefore every resolution — is built the same
-  // way on every process.
-  const aliasRows = all<{ alias: string; activity_id: string }>(
+  // way in every process.
+  const aliasRows = await all<{ alias: string; activity_id: string }>(
     `SELECT a.alias, a.activity_id
        FROM activity_aliases a
        JOIN activities act ON act.id = a.activity_id
@@ -88,16 +93,24 @@ function taxonomy() {
     tokens: new Set(tokenize(`${activity.name} ${activity.slug.replace(/-/g, " ")} ${activity.keywords}`)),
   }));
 
-  cache = { activities: withTokens, aliases, stemmedAliases };
-  return cache;
+  return {
+    activities: withTokens,
+    byId: new Map(withTokens.map((activity) => [activity.id, activity])),
+    aliases,
+    stemmedAliases,
+  };
 }
 
-export function listActivities(): Activity[] {
-  return taxonomy().activities;
+function taxonomy(): Promise<Taxonomy> {
+  return (cache ??= load());
 }
 
-export function getActivity(id: string): Activity | undefined {
-  return taxonomy().activities.find((activity) => activity.id === id);
+export async function listActivities(): Promise<Activity[]> {
+  return (await taxonomy()).activities;
+}
+
+export async function getActivity(id: string): Promise<Activity | undefined> {
+  return (await taxonomy()).byId.get(id);
 }
 
 // --- duration stripping ---------------------------------------------------
@@ -110,8 +123,8 @@ const DURATION_PHRASE =
  * subject matter rather than the activity. Without this, "studied machine
  * learning" would score as ML engineering instead of as studying.
  *
- * These only apply when no alias matches at the very start of the text, so a
- * more specific opener like "read a paper" still wins.
+ * These only apply when no longer alias matches at the very start of the text,
+ * so a more specific opener like "read a paper" still wins.
  */
 const FRAMING_VERBS: { pattern: RegExp; slug: string }[] = [
   { pattern: /^(?:studied|studying|study|revised|revising|revision)\b/, slug: "studying" },
@@ -127,11 +140,13 @@ export function stripDuration(text: string): string {
 // --- the cascade ----------------------------------------------------------
 
 /** Ranked candidates by lexical similarity. Also feeds the LLM's context. */
-export function rankCandidates(text: string, limit = 12): { activity: Activity; score: number }[] {
+export async function rankCandidates(
+  text: string, limit = 12,
+): Promise<{ activity: Activity; score: number }[]> {
   const tokens = tokenize(stripDuration(text));
   if (tokens.length === 0) return [];
 
-  return taxonomy()
+  return (await taxonomy())
     .activities
     .map((activity) => ({ activity, score: similarity(tokens, activity.tokens) }))
     .filter((row) => row.score > 0.15)
@@ -143,17 +158,19 @@ export function rankCandidates(text: string, limit = 12): { activity: Activity; 
  * Deterministic resolution. Returns null when nothing is close enough — the
  * caller then either asks the LLM or asks the user. It never guesses.
  */
-export function resolveDeterministic(rawText: string, userId?: string): Resolution | null {
+export async function resolveDeterministic(
+  rawText: string, userId?: string,
+): Promise<Resolution | null> {
   const stripped = stripDuration(rawText);
   const key = normalize(stripped);
   if (!key) return null;
 
-  const { aliases, stemmedAliases } = taxonomy();
+  const { aliases, stemmedAliases, byId, activities } = await taxonomy();
 
   // 1. The whole phrase is a known name or alias.
   const exact = aliases.get(key);
   if (exact) {
-    const activity = getActivity(exact);
+    const activity = byId.get(exact);
     if (activity) return { activity, confidence: 0.98, method: "exact" };
   }
 
@@ -161,7 +178,7 @@ export function resolveDeterministic(rawText: string, userId?: string): Resoluti
   const stemmedKey = tokenize(key).join(" ");
   const stemmed = stemmedKey ? stemmedAliases.get(stemmedKey) : undefined;
   if (stemmed) {
-    const activity = getActivity(stemmed);
+    const activity = byId.get(stemmed);
     if (activity) return { activity, confidence: 0.96, method: "exact" };
   }
 
@@ -172,18 +189,18 @@ export function resolveDeterministic(rawText: string, userId?: string): Resoluti
   // improves *classification* only — scoring still comes from the shared
   // taxonomy row it points at, so nobody gets a personalised rate.
   if (userId && stemmedKey) {
-    const exactMemory = get<{ activity_id: string }>(
+    const exactMemory = await get<{ activity_id: string }>(
       `SELECT activity_id FROM user_activity_memory WHERE user_id = ? AND phrase = ?`,
       userId, stemmedKey,
     );
     if (exactMemory) {
-      const activity = getActivity(exactMemory.activity_id);
+      const activity = byId.get(exactMemory.activity_id);
       if (activity) return { activity, confidence: 0.95, method: "memory" };
     }
 
-    const partial = bestRememberedMatch(userId, stemmedKey);
+    const partial = await bestRememberedMatch(userId, stemmedKey);
     if (partial) {
-      const activity = getActivity(partial);
+      const activity = byId.get(partial);
       if (activity) return { activity, confidence: 0.9, method: "memory" };
     }
   }
@@ -223,17 +240,17 @@ export function resolveDeterministic(rawText: string, userId?: string): Resoluti
   for (const { pattern, slug } of FRAMING_VERBS) {
     const match = opener.match(pattern);
     if (!match || longestAliasAtStart > match[0].length) continue;
-    const activity = taxonomy().activities.find((candidate) => candidate.slug === slug);
+    const activity = activities.find((candidate) => candidate.slug === slug);
     if (activity) return { activity, confidence: 0.93, method: "keyword" };
   }
 
   if (bestAlias) {
-    const activity = getActivity(bestAlias.id);
+    const activity = byId.get(bestAlias.id);
     if (activity) return { activity, confidence: 0.92, method: "alias" };
   }
 
   // 4. Token similarity across names and keywords.
-  const [top, runnerUp] = rankCandidates(stripped, 2);
+  const [top, runnerUp] = await rankCandidates(stripped, 2);
   if (top) {
     // A clear winner is worth more than a narrow one.
     const margin = runnerUp ? top.score - runnerUp.score : top.score;
@@ -252,11 +269,11 @@ export function resolveDeterministic(rawText: string, userId?: string): Resoluti
  * One user's memory of how they phrase things. Stored as stemmed tokens so
  * filler words and word endings don't stop a later match.
  */
-function bestRememberedMatch(userId: string, stemmedKey: string): string | null {
+async function bestRememberedMatch(userId: string, stemmedKey: string): Promise<string | null> {
   const wanted = new Set(stemmedKey.split(" ").filter(Boolean));
   if (wanted.size === 0) return null;
 
-  const rows = all<{ phrase: string; activity_id: string; hits: number }>(
+  const rows = await all<{ phrase: string; activity_id: string; hits: number }>(
     `SELECT phrase, activity_id, hits FROM user_activity_memory
       WHERE user_id = ? ORDER BY hits DESC, last_used DESC LIMIT 200`,
     userId,
@@ -281,13 +298,13 @@ function bestRememberedMatch(userId: string, stemmedKey: string): string | null 
 }
 
 /** Remembers "this phrasing means that activity" for this user only. */
-export function rememberPhrase(userId: string, rawText: string, activityId: string): void {
+export async function rememberPhrase(userId: string, rawText: string, activityId: string): Promise<void> {
   const phrase = tokenize(stripDuration(rawText)).join(" ");
   if (!phrase || phrase.length > 120) return;
-  run(
+  await run(
     `INSERT INTO user_activity_memory (user_id, phrase, activity_id, hits, last_used)
      VALUES (?, ?, ?, 1, ?)
-     ON CONFLICT(user_id, phrase) DO UPDATE SET
+     ON CONFLICT (user_id, phrase) DO UPDATE SET
        activity_id = excluded.activity_id,
        hits = user_activity_memory.hits + 1,
        last_used = excluded.last_used`,
@@ -304,34 +321,36 @@ export function rememberPhrase(userId: string, rawText: string, activityId: stri
  * Returns null when the neighbourhood is too thin to price confidently; the
  * caller then files it as a proposal for review instead of scoring it.
  */
-export function deriveActivity(
+export async function deriveActivity(
   name: string,
   parentId: string,
   neighbourIds: string[],
-): Activity | null {
-  const parent = getActivity(parentId);
+): Promise<Activity | null> {
+  const { byId, activities } = await taxonomy();
+  const parent = byId.get(parentId);
   if (!parent) return null;
 
-  const siblings = all<{ base_xp_per_hour: number }>(
+  const siblingRows = await all<{ base_xp_per_hour: number }>(
     `SELECT base_xp_per_hour FROM activities WHERE parent_id = ? AND status = 'active'`,
     parentId,
-  ).map((row) => row.base_xp_per_hour);
+  );
+  const siblings = siblingRows.map((row) => row.base_xp_per_hour);
 
   const neighbours = neighbourIds
-    .map((id) => getActivity(id)?.base_xp_per_hour)
+    .map((id) => byId.get(id)?.base_xp_per_hour)
     .filter((rate): rate is number => typeof rate === "number");
 
   const rate = deriveXpRate([...siblings, ...neighbours, parent.base_xp_per_hour]);
   if (rate === null) return null;
 
   const slug = slugify(name);
-  const existing = taxonomy().activities.find((activity) => activity.slug === slug);
+  const existing = activities.find((activity) => activity.slug === slug);
   if (existing) return existing;
 
-  const id = nextActivityId();
+  const id = await nextActivityId();
   const now = new Date().toISOString();
 
-  run(
+  await run(
     `INSERT INTO activities
        (id, name, slug, parent_id, category, base_xp_per_hour, icon, description,
         keywords, status, scoring_version, origin, created_at, updated_at)
@@ -339,19 +358,21 @@ export function deriveActivity(
     id, name, slug, parentId, parent.category, rate, parent.icon,
     normalize(name), parent.scoring_version, now, now,
   );
-  run(
+  await run(
     `INSERT INTO activity_aliases (alias, activity_id, source, created_at)
-     VALUES (?, ?, 'llm', ?) ON CONFLICT(alias) DO NOTHING`,
+     VALUES (?, ?, 'llm', ?) ON CONFLICT (alias) DO NOTHING`,
     normalize(name), id, now,
   );
 
   invalidateTaxonomyCache();
-  return getActivity(id) ?? null;
+  return (await getActivity(id)) ?? null;
 }
 
 /** Files an activity we couldn't confidently place. Nothing is scored from it. */
-export function proposeActivity(rawText: string, name: string, parentId: string | null, userId: string): void {
-  run(
+export async function proposeActivity(
+  rawText: string, name: string, parentId: string | null, userId: string,
+): Promise<void> {
+  await run(
     `INSERT INTO proposed_activities (id, raw_text, suggested_name, parent_id, user_id, status, created_at)
      VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
     `PROP_${crypto.randomUUID().slice(0, 8)}`, rawText.slice(0, 500), name.slice(0, 100),

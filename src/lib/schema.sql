@@ -1,9 +1,12 @@
--- LifeScore schema. Plain SQL, portable to Postgres with minimal edits.
--- All timestamps are ISO-8601 UTC strings. All "day" columns are 'YYYY-MM-DD'
--- in the *user's* local timezone, computed server-side at write time so that
--- streaks and daily totals match what the user actually experienced.
-
-PRAGMA foreign_keys = ON;
+-- LifeScore schema (PostgreSQL).
+--
+-- Timestamps are ISO-8601 UTC strings and "day" columns are 'YYYY-MM-DD' in the
+-- *user's* local timezone, computed server-side at write time so streaks and
+-- daily totals match the day the user actually lived. They are TEXT on purpose:
+-- the comparisons are all lexicographic range scans on a fixed-width label, and
+-- storing them as dates would invite the server's timezone into the answer.
+--
+-- Every statement is idempotent — this runs on each boot.
 
 CREATE TABLE IF NOT EXISTS users (
   id            TEXT PRIMARY KEY,
@@ -35,7 +38,7 @@ CREATE TABLE IF NOT EXISTS activities (
   slug             TEXT NOT NULL UNIQUE,
   parent_id        TEXT REFERENCES activities(id) ON DELETE SET NULL,
   category         TEXT NOT NULL,             -- top-level category slug
-  base_xp_per_hour REAL NOT NULL,
+  base_xp_per_hour DOUBLE PRECISION NOT NULL,
   unit             TEXT NOT NULL DEFAULT 'hour',
   icon             TEXT NOT NULL DEFAULT '✨',
   description      TEXT NOT NULL DEFAULT '',
@@ -84,10 +87,10 @@ CREATE TABLE IF NOT EXISTS activity_logs (
   raw_text               TEXT NOT NULL,
   duration_minutes       INTEGER NOT NULL,
   xp                     INTEGER NOT NULL,
-  base_xp_per_hour       REAL NOT NULL,
+  base_xp_per_hour       DOUBLE PRECISION NOT NULL,
   scoring_version        INTEGER NOT NULL,
   resolution_method      TEXT NOT NULL,       -- exact | alias | memory | keyword | llm | manual
-  confidence             REAL NOT NULL DEFAULT 1.0,
+  confidence             DOUBLE PRECISION NOT NULL DEFAULT 1.0,
   local_day              TEXT NOT NULL,       -- YYYY-MM-DD in user's timezone
   created_at             TEXT NOT NULL,
   updated_at             TEXT NOT NULL

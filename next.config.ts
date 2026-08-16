@@ -2,8 +2,8 @@ import type { NextConfig } from "next";
 
 const config: NextConfig = {
   reactStrictMode: true,
-  // node:sqlite is a Node builtin — keep it out of the bundler graph.
-  serverExternalPackages: ["node:sqlite"],
+  // Database drivers load native/wasm assets; keep them out of the bundle.
+  serverExternalPackages: ["pg", "@electric-sql/pglite"],
   poweredByHeader: false,
 
   // Self-contained server bundle for deployment (see DEPLOY.md).

@@ -30,16 +30,16 @@ export function verifyPassword(password: string, stored: string): boolean {
 
 export type AuthError = { error: string };
 
-export function createUser(input: {
+export async function createUser(input: {
   email: string; name: string; password: string; timezone: string;
-}): SessionUser | AuthError {
+}): Promise<SessionUser | AuthError> {
   const email = input.email.trim().toLowerCase();
   const name = input.name.trim();
 
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: "That email doesn't look right." };
   if (name.length < 2 || name.length > 40) return { error: "Your name should be 2–40 characters." };
   if (input.password.length < 8) return { error: "Use at least 8 characters for your password." };
-  if (get(`SELECT 1 FROM users WHERE email = ?`, email)) {
+  if (await get(`SELECT 1 FROM users WHERE email = ?`, email)) {
     return { error: "An account with that email already exists." };
   }
 
@@ -48,7 +48,7 @@ export function createUser(input: {
   // Stable per-user accent colour derived from the id.
   const hue = [...id].reduce((acc, char) => (acc * 31 + char.charCodeAt(0)) % 360, 7);
 
-  run(
+  await run(
     `INSERT INTO users (id, email, name, password_hash, avatar_hue, timezone, is_admin, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
     id, email, name, hashPassword(input.password), hue, input.timezone || "UTC", now, now,
@@ -57,8 +57,8 @@ export function createUser(input: {
   return { id, email, name, avatar_hue: hue, timezone: input.timezone || "UTC", is_admin: 0 };
 }
 
-export function authenticate(email: string, password: string): SessionUser | AuthError {
-  const user = get<SessionUser & { password_hash: string }>(
+export async function authenticate(email: string, password: string): Promise<SessionUser | AuthError> {
+  const user = await get<SessionUser & { password_hash: string }>(
     `SELECT id, email, name, avatar_hue, timezone, is_admin, password_hash
        FROM users WHERE email = ?`,
     email.trim().toLowerCase(),
@@ -76,7 +76,7 @@ export async function startSession(userId: string): Promise<void> {
   const now = new Date();
   const expires = new Date(now.getTime() + SESSION_DAYS * 86_400_000);
 
-  run(
+  await run(
     `INSERT INTO sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)`,
     token, userId, expires.toISOString(), now.toISOString(),
   );
@@ -93,7 +93,7 @@ export async function startSession(userId: string): Promise<void> {
 export async function endSession(): Promise<void> {
   const store = await cookies();
   const token = store.get(COOKIE)?.value;
-  if (token) run(`DELETE FROM sessions WHERE id = ?`, token);
+  if (token) await run(`DELETE FROM sessions WHERE id = ?`, token);
   store.delete(COOKIE);
 }
 
@@ -102,7 +102,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   const token = (await cookies()).get(COOKIE)?.value;
   if (!token) return null;
 
-  const user = get<SessionUser & { expires_at: string }>(
+  const user = await get<SessionUser & { expires_at: string }>(
     `SELECT u.id, u.email, u.name, u.avatar_hue, u.timezone, u.is_admin, s.expires_at
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.id = ?`,
@@ -110,7 +110,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   );
   if (!user) return null;
   if (Date.parse(user.expires_at) < Date.now()) {
-    run(`DELETE FROM sessions WHERE id = ?`, token);
+    await run(`DELETE FROM sessions WHERE id = ?`, token);
     return null;
   }
   const { expires_at: _expires, ...rest } = user;

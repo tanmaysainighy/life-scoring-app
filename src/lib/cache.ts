@@ -17,6 +17,14 @@ export function cached<T>(key: string, ttlMs: number, compute: () => T): T {
   const value = compute();
   store.set(key, { value, expires: now + ttlMs });
 
+  // Caching the promise itself means concurrent requests share one query. A
+  // failed one must not stay cached, though, or the error outlives the outage.
+  if (value instanceof Promise) {
+    value.catch(() => {
+      if (store.get(key)?.value === value) store.delete(key);
+    });
+  }
+
   // Opportunistic sweep; the map never holds more than a few hundred keys.
   if (store.size > 500) {
     for (const [k, entry] of store) if (entry.expires <= now) store.delete(k);

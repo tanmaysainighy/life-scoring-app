@@ -4,7 +4,7 @@ import { joinGroup } from "@/lib/groups";
 
 export const POST = route(
   async ({ user, body }) => {
-    const result = joinGroup(user.id, body.invite_code);
+    const result = await joinGroup(user.id, body.invite_code);
     return result.ok ? ok({ id: result.id }) : fail(result.error, 404, "invalid_invite");
   },
   {

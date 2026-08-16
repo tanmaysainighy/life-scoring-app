@@ -21,7 +21,7 @@ export async function signIn(_state: FormState, formData: FormData): Promise<For
   const limited = rateLimit("auth", await limitKey());
   if (!limited.ok) return { error: `Too many attempts. Try again in ${limited.retryAfterSeconds}s.` };
 
-  const result = authenticate(String(formData.get("email") ?? ""), String(formData.get("password") ?? ""));
+  const result = await authenticate(String(formData.get("email") ?? ""), String(formData.get("password") ?? ""));
   if ("error" in result) return { error: result.error };
 
   await startSession(result.id);
@@ -32,7 +32,7 @@ export async function signUp(_state: FormState, formData: FormData): Promise<For
   const limited = rateLimit("auth", await limitKey());
   if (!limited.ok) return { error: `Too many attempts. Try again in ${limited.retryAfterSeconds}s.` };
 
-  const result = createUser({
+  const result = await createUser({
     email: String(formData.get("email") ?? ""),
     name: String(formData.get("name") ?? ""),
     password: String(formData.get("password") ?? ""),

@@ -13,12 +13,12 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   const user = await requireUser();
   const { id } = await params;
 
-  const group = getGroup(id);
+  const group = await getGroup(id);
   // Non-members get a 404 rather than a 403 — no group's existence is leaked.
-  if (!group || !isMember(group.id, user.id)) notFound();
+  if (!group || !(await isMember(group.id, user.id))) notFound();
 
   const today = localDay(new Date(), user.timezone);
-  const leaderboard = getGroupLeaderboard(group.id, "week", today);
+  const leaderboard = await getGroupLeaderboard(group.id, "week", today);
 
   return (
     <div className="space-y-6">

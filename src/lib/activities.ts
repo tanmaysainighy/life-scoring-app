@@ -49,7 +49,7 @@ export async function analyzeEntry(userId: string, rawText: string): Promise<Ana
   }
 
   const statedDuration = parseDuration(text);
-  const deterministic = resolveDeterministic(text, userId);
+  const deterministic = await resolveDeterministic(text, userId);
 
   // Fast path: we know the activity and the duration without any model call.
   if (deterministic && deterministic.confidence >= ACCEPT_CONFIDENCE) {
@@ -64,8 +64,8 @@ export async function analyzeEntry(userId: string, rawText: string): Promise<Ana
   }
 
   // Otherwise ask the model, giving it only a shortlist to choose from.
-  const candidates = rankCandidates(text, 12).map((row) => row.activity);
-  const shortlist = candidates.length >= 3 ? candidates : topLevelActivities();
+  const candidates = (await rankCandidates(text, 12)).map((row) => row.activity);
+  const shortlist = candidates.length >= 3 ? candidates : await topLevelActivities();
   const classification = LLM_AVAILABLE ? await classifyActivity(text, shortlist) : null;
 
   if (!classification) {
@@ -102,7 +102,7 @@ export async function analyzeEntry(userId: string, rawText: string): Promise<Ana
 
   // Known activity chosen from the shortlist.
   if (classification.activity_id) {
-    const activity = getActivity(classification.activity_id);
+    const activity = await getActivity(classification.activity_id);
     if (!activity) return { status: "clarify", message: "I couldn't match that to an activity. Can you rephrase it?" };
     if (duration === null) {
       return {
@@ -116,7 +116,7 @@ export async function analyzeEntry(userId: string, rawText: string): Promise<Ana
 
   // Nothing fit: derive a new canonical activity, priced from its neighbours.
   if (classification.proposed_activity_name && classification.proposed_parent_id) {
-    const derived = deriveActivity(
+    const derived = await deriveActivity(
       classification.proposed_activity_name,
       classification.proposed_parent_id,
       shortlist.map((activity) => activity.id),
@@ -132,7 +132,7 @@ export async function analyzeEntry(userId: string, rawText: string): Promise<Ana
       return present(derived, duration, Math.min(classification.confidence, 0.85), "llm",
         `This is a new activity for LifeScore. It's scored at ${derived.base_xp_per_hour} XP/h, in line with similar activities.`);
     }
-    proposeActivity(text, classification.proposed_activity_name, classification.proposed_parent_id, userId);
+    await proposeActivity(text, classification.proposed_activity_name, classification.proposed_parent_id, userId);
     return {
       status: "clarify",
       durationMinutes: duration,
@@ -185,8 +185,8 @@ function present(
   };
 }
 
-function topLevelActivities(): Activity[] {
-  return listActivities().filter((activity) => activity.parent_id === null);
+async function topLevelActivities(): Promise<Activity[]> {
+  return (await listActivities()).filter((activity) => activity.parent_id === null);
 }
 
 // --- writes ---------------------------------------------------------------
@@ -200,12 +200,12 @@ export type CreateResult =
  * and the original text — never a score. The rate is read from the taxonomy
  * here and snapshotted onto the row along with its scoring_version.
  */
-export function createEntry(
+export async function createEntry(
   user: { id: string; timezone: string },
   input: { activityId: string; durationMinutes: number; rawText: string; method?: ResolutionMethod; confidence?: number },
   options: { acknowledged?: boolean } = {},
-): CreateResult {
-  const activity = getActivity(input.activityId);
+): Promise<CreateResult> {
+  const activity = await getActivity(input.activityId);
   if (!activity) {
     return { ok: false, issue: { severity: "error", code: "unknown_activity", message: "That activity doesn't exist." } };
   }
@@ -213,18 +213,18 @@ export function createEntry(
   const now = new Date();
   const day = localDay(now, user.timezone);
 
-  const minutesToday = get<{ total: number }>(
+  const minutesToday = (await get<{ total: number }>(
     `SELECT COALESCE(SUM(duration_minutes), 0) AS total
        FROM activity_logs WHERE user_id = ? AND local_day = ?`,
     user.id, day,
-  )?.total ?? 0;
+  ))?.total ?? 0;
 
   const duplicateSince = new Date(now.getTime() - DUPLICATE_WINDOW_MINUTES * 60_000).toISOString();
-  const duplicate = get<{ n: number }>(
+  const duplicate = (await get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM activity_logs
       WHERE user_id = ? AND activity_id = ? AND duration_minutes = ? AND created_at >= ?`,
     user.id, activity.id, input.durationMinutes, duplicateSince,
-  )?.n ?? 0;
+  ))?.n ?? 0;
 
   const issue = validateEntry(input.durationMinutes, {
     category: activity.category,
@@ -242,8 +242,8 @@ export function createEntry(
   const id = `LOG_${crypto.randomUUID()}`;
   const timestamp = now.toISOString();
 
-  transaction(() => {
-    run(
+  await transaction(async () => {
+    await run(
       `INSERT INTO activity_logs
          (id, user_id, activity_id, raw_text, duration_minutes, xp, base_xp_per_hour,
           scoring_version, resolution_method, confidence, local_day, created_at, updated_at)
@@ -252,12 +252,12 @@ export function createEntry(
       activity.base_xp_per_hour, activity.scoring_version, input.method ?? "manual",
       input.confidence ?? 1, day, timestamp, timestamp,
     );
-    rememberPhrase(user.id, input.rawText, activity.id);
+    await rememberPhrase(user.id, input.rawText, activity.id);
   });
 
-  const totalXp = get<{ total: number }>(
+  const totalXp = (await get<{ total: number }>(
     `SELECT COALESCE(SUM(xp), 0) AS total FROM activity_logs WHERE user_id = ?`, user.id,
-  )?.total ?? 0;
+  ))?.total ?? 0;
 
   return { ok: true, id, xp, activity: publicActivity(activity), durationMinutes: input.durationMinutes, totalXp };
 }
@@ -266,12 +266,12 @@ export function createEntry(
  * Edits re-score through the same engine. The rate used is the current one for
  * that activity — the entry is being restated now, so it is priced now.
  */
-export function updateEntry(
+export async function updateEntry(
   userId: string,
   logId: string,
   input: { activityId?: string; durationMinutes?: number; rawText?: string },
-): CreateResult {
-  const existing = get<{ activity_id: string; duration_minutes: number; raw_text: string; local_day: string }>(
+): Promise<CreateResult> {
+  const existing = await get<{ activity_id: string; duration_minutes: number; raw_text: string; local_day: string }>(
     `SELECT activity_id, duration_minutes, raw_text, local_day FROM activity_logs WHERE id = ? AND user_id = ?`,
     logId, userId,
   );
@@ -279,18 +279,18 @@ export function updateEntry(
     return { ok: false, issue: { severity: "error", code: "not_found", message: "That entry no longer exists." } };
   }
 
-  const activity = getActivity(input.activityId ?? existing.activity_id);
+  const activity = await getActivity(input.activityId ?? existing.activity_id);
   const durationMinutes = input.durationMinutes ?? existing.duration_minutes;
   if (!activity) {
     return { ok: false, issue: { severity: "error", code: "unknown_activity", message: "That activity doesn't exist." } };
   }
 
   // Day totals exclude this entry, since the edit replaces it rather than adds.
-  const minutesOtherEntries = get<{ total: number }>(
+  const minutesOtherEntries = (await get<{ total: number }>(
     `SELECT COALESCE(SUM(duration_minutes), 0) AS total
        FROM activity_logs WHERE user_id = ? AND local_day = ? AND id != ?`,
     userId, existing.local_day, logId,
-  )?.total ?? 0;
+  ))?.total ?? 0;
 
   const issue = validateEntry(durationMinutes, {
     category: activity.category,
@@ -300,7 +300,7 @@ export function updateEntry(
   if (issue?.severity === "error") return { ok: false, issue };
 
   const xp = scoreActivity({ baseXpPerHour: activity.base_xp_per_hour, durationMinutes });
-  run(
+  await run(
     `UPDATE activity_logs
         SET activity_id = ?, duration_minutes = ?, raw_text = ?, xp = ?,
             base_xp_per_hour = ?, scoring_version = ?, resolution_method = 'manual', updated_at = ?
@@ -309,19 +309,19 @@ export function updateEntry(
     activity.base_xp_per_hour, activity.scoring_version, new Date().toISOString(), logId, userId,
   );
 
-  const totalXp = get<{ total: number }>(
+  const totalXp = (await get<{ total: number }>(
     `SELECT COALESCE(SUM(xp), 0) AS total FROM activity_logs WHERE user_id = ?`, userId,
-  )?.total ?? 0;
+  ))?.total ?? 0;
 
   return { ok: true, id: logId, xp, activity: publicActivity(activity), durationMinutes, totalXp };
 }
 
-export function deleteEntry(userId: string, logId: string): boolean {
-  const existing = get<{ id: string }>(
+export async function deleteEntry(userId: string, logId: string): Promise<boolean> {
+  const existing = await get<{ id: string }>(
     `SELECT id FROM activity_logs WHERE id = ? AND user_id = ?`, logId, userId,
   );
   if (!existing) return false;
-  run(`DELETE FROM activity_logs WHERE id = ? AND user_id = ?`, logId, userId);
+  await run(`DELETE FROM activity_logs WHERE id = ? AND user_id = ?`, logId, userId);
   return true;
 }
 

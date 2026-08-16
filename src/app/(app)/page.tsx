@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const { totals, streak, level, logs, groups } = getDashboard(user);
+  const { totals, streak, level, logs, groups } = await getDashboard(user);
   const minutesToday = logs.reduce((sum, log) => sum + log.duration_minutes, 0);
 
   return (

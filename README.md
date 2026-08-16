@@ -31,19 +31,37 @@ touches it. Rates live in the database; [`scoring.ts`](src/lib/scoring.ts) turns
 npm install && npm run dev
 ```
 
-Open http://localhost:3000 and create an account. The activity taxonomy seeds
-itself on first run, so the app is useful immediately.
+Open http://localhost:3000 and create an account. No database to install: with
+`DATABASE_URL` unset the app runs Postgres in-process (PGlite) with its data
+under `data/pgdata`. The activity taxonomy seeds itself, so the app is useful
+immediately.
 
 No configuration is required. To enable the LLM fallback, copy `.env.example` to
 `.env.local` and set `GROQ_API_KEY` (get one at
 [console.groq.com/keys](https://console.groq.com/keys)).
 
 ```bash
-npm test        # 80 tests, no database or network needed
+npm test        # 94 tests, no database server or network needed
 npm run build   # production build
 npm start       # production server
 npm run seed    # re-apply the taxonomy after editing taxonomy.ts
 ```
+
+## Deploying
+
+State lives in Postgres, so the container is stateless — no volume, and it scales
+past one instance. Any host that runs a Dockerfile works.
+
+1. Create a free Postgres ([Neon](https://neon.tech) or
+   [Supabase](https://supabase.com)) and copy its connection string.
+2. Set `DATABASE_URL` on the host, and `GROQ_API_KEY` if you want the LLM
+   fallback. Leave `NODE_ENV` and `PORT` alone — the platform sets those.
+3. Deploy. The schema and taxonomy apply themselves on boot, and `/api/health`
+   reports readiness.
+
+Coming from the old SQLite build? `DATABASE_URL=... npm run import:sqlite` copies
+accounts, groups, logs and memory across. It remaps every activity reference
+through its slug rather than its id, and is safe to run more than once.
 
 To reset all data, delete the `data/` directory.
 
@@ -96,9 +114,11 @@ tests/            scoring, durations, levels, streaks, resolution, integration
 
 ## Notable decisions
 
-**SQLite via `node:sqlite`.** A real SQL database with indexes, aggregates and
-window functions, built into Node 24 — no native compilation, no service to run.
-Queries are plain SQL and lift to Postgres by swapping `db.ts`.
+**Postgres, with no server to install locally.** One driver interface, two
+backends: `pg` against a real server when `DATABASE_URL` is set, and PGlite —
+Postgres compiled to WASM — in-process when it isn't. Local development and the
+test suite need no database running, and tests are hermetic. Queries are written
+with `?` placeholders and rewritten to `$1, $2, …` in `db.ts`.
 
 **Server-rendered pages, not client fetches.** The dashboard runs its queries
 during the render, so there's no request waterfall and no loading spinner for

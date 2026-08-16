@@ -11,7 +11,7 @@ import { getLevelFromXP } from "@/lib/levels";
 export const POST = route(
   async ({ user, body }) => {
     const before = body.previous_lifetime_xp ?? null;
-    const result = createEntry(user, {
+    const result = await createEntry(user, {
       activityId: body.activity_id,
       durationMinutes: body.duration_minutes,
       rawText: body.raw_text,

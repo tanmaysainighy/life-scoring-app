@@ -14,7 +14,7 @@ export default async function LogPage({
 }: { searchParams: Promise<{ page?: string }> }) {
   const user = await requireUser();
   const page = Math.max(1, Number((await searchParams).page) || 1);
-  const logs = getRecentLogs(user.id, PAGE_SIZE, (page - 1) * PAGE_SIZE);
+  const logs = await getRecentLogs(user.id, PAGE_SIZE, (page - 1) * PAGE_SIZE);
 
   // Group by the day the user actually lived, newest first.
   const days = new Map<string, typeof logs>();
