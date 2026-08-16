@@ -4,6 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "LifeScore",
   description: "Say what you did. Get a fair score. Compete with your people.",
+  icons: { icon: "/favicon.svg" },
 };
 
 export const viewport: Viewport = {
