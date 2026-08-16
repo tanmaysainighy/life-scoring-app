@@ -82,12 +82,19 @@ export function seedTaxonomy(): void {
 
 let bootstrapped = false;
 
-/** Runs once per process, on first import by any server module that needs data. */
+/**
+ * Runs once per process, on first import by any server module that needs data.
+ *
+ * This applies the taxonomy on *every* boot, not just an empty database. That's
+ * what makes deploying a taxonomy change work: seeding is an upsert keyed by
+ * slug, ids of existing activities never move, and historical logs keep the
+ * rate they were scored at. Skipping when rows already exist would mean new
+ * activities silently never reached production.
+ */
 export function ensureSeeded(): void {
   if (bootstrapped) return;
   bootstrapped = true;
-  const count = get<{ n: number }>(`SELECT COUNT(*) AS n FROM activities`)?.n ?? 0;
-  if (count === 0) seedTaxonomy();
+  seedTaxonomy();
 }
 
 ensureSeeded();

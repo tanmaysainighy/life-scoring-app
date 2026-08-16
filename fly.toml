@@ -1,0 +1,47 @@
+# Fly.io deployment.
+#
+# The database is a SQLite file on a persistent volume, which means this app
+# runs as EXACTLY ONE machine. A volume attaches to a single machine, so a
+# second one would silently get its own empty database and split your users
+# across two files. Never run `fly scale count 2`.
+#
+# Change `app` to something globally unique before deploying — Fly app names
+# share one namespace across all users.
+
+app = "lifescore"
+primary_region = "bom"          # Mumbai. Use `fly platform regions` for others.
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # Must match the mount destination below.
+  DATABASE_PATH = "/data/lifescore.db"
+  PORT = "3000"
+
+# The persistent disk. Create it first:
+#   fly volumes create lifescore_data --region bom --size 1
+[[mounts]]
+  source = "lifescore_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_start_machines = true
+  # Sleeps when idle to keep cost near zero; the next request wakes it, which
+  # costs a second or two of cold start. Set to "off" if you'd rather it always
+  # stay warm.
+  auto_stop_machines = "stop"
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "15s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
