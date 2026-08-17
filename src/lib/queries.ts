@@ -90,10 +90,6 @@ export function getRecentLogs(userId: string, limit = 50, offset = 0): Promise<L
   );
 }
 
-export function getLog(userId: string, logId: string): Promise<LogRow | undefined> {
-  return get<LogRow>(`${LOG_SELECT} WHERE l.user_id = ? AND l.id = ?`, userId, logId);
-}
-
 /** XP per day for the last `days` days, zero-filled for the chart. */
 export async function getDailySeries(userId: string, today: string, days = 14) {
   const from = addDays(today, -(days - 1));

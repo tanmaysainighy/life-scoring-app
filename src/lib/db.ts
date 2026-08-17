@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
 
 /**
@@ -18,13 +19,33 @@ import path from "node:path";
  */
 
 type Row = Record<string, unknown>;
-type Driver = {
-  /** One parameterised statement. */
+
+/** A single connection held for the length of a transaction. */
+type Session = {
   query: (sql: string, params: unknown[]) => Promise<{ rows: Row[] }>;
-  /** Raw SQL that may contain several statements (the schema, BEGIN/COMMIT). */
   exec: (sql: string) => Promise<void>;
+  release: () => void;
+};
+
+type Driver = {
+  /** One parameterised statement, on any pooled connection. */
+  query: (sql: string, params: unknown[]) => Promise<{ rows: Row[] }>;
+  /** Raw SQL that may contain several statements (the schema). */
+  exec: (sql: string) => Promise<void>;
+  /** Checks out one connection and keeps it until released. */
+  session: () => Promise<Session>;
   close: () => Promise<void>;
 };
+
+/**
+ * The connection a transaction is running on, if any.
+ *
+ * Statements inside a transaction must all run on the *same* connection. Rather
+ * than thread a client argument through every query in the app, the active
+ * transaction is carried in async context, so ordinary `run`/`get`/`all` calls
+ * inside `transaction(...)` route to it automatically.
+ */
+const activeTransaction = new AsyncLocalStorage<Session>();
 
 const globalForDb = globalThis as unknown as {
   __lifescoreDriver?: Promise<Driver>;
@@ -89,6 +110,14 @@ async function createDriver(): Promise<Driver> {
       query: (sql, params) => pool.query(sql, params),
       // No parameters means the simple query protocol, which accepts a script.
       exec: async (sql) => { await pool.query(sql); },
+      session: async () => {
+        const client = await pool.connect();
+        return {
+          query: (sql, params) => client.query(sql, params),
+          exec: async (sql) => { await client.query(sql); },
+          release: () => client.release(),
+        };
+      },
       close: () => pool.end(),
     };
   }
@@ -99,14 +128,14 @@ async function createDriver(): Promise<Driver> {
   const client = new PGlite(process.env.PGLITE_MEMORY ? undefined : dataDir);
   await client.waitReady;
 
-  return {
-    query: async (sql, params) => {
-      const result = await client.query(sql, params as never[]);
-      return { rows: (result.rows ?? []) as Row[] };
-    },
-    exec: async (sql) => { await client.exec(sql); },
-    close: () => client.close(),
+  const query = async (sql: string, params: unknown[]) => {
+    const result = await client.query(sql, params as never[]);
+    return { rows: (result.rows ?? []) as Row[] };
   };
+  const exec = async (sql: string) => { await client.exec(sql); };
+
+  // PGlite is a single connection, so a session is that same connection.
+  return { query, exec, session: async () => ({ query, exec, release: () => {} }), close: () => client.close() };
 }
 
 function driver(): Promise<Driver> {
@@ -124,7 +153,7 @@ export function ready(): Promise<void> {
 
 async function execute(sql: string, params: unknown[]): Promise<Row[]> {
   await ready();
-  const connection = await driver();
+  const connection = activeTransaction.getStore() ?? (await driver());
   const { rows } = await connection.query(toPositional(sql), params);
   return rows;
 }
@@ -145,21 +174,27 @@ export async function run(sql: string, ...params: unknown[]): Promise<void> {
 /**
  * Runs `fn` inside a transaction, rolling back on any throw.
  *
- * Note this uses the shared connection rather than checking one out of the
- * pool, which is correct here because every caller awaits its statements in
- * sequence and the app never runs two transactions concurrently.
+ * The connection is checked out for the whole block and bound to async context,
+ * so every query `fn` makes lands on it. Issuing BEGIN through the pool instead
+ * would return the connection immediately, scattering the statements across
+ * different connections and leaving one checked back in mid-transaction.
  */
 export async function transaction<T>(fn: () => Promise<T>): Promise<T> {
   await ready();
-  const connection = await driver();
-  await connection.exec("BEGIN");
+  // Already inside one: join it rather than opening a nested BEGIN.
+  if (activeTransaction.getStore()) return fn();
+
+  const session = await (await driver()).session();
   try {
-    const result = await fn();
-    await connection.exec("COMMIT");
+    await session.exec("BEGIN");
+    const result = await activeTransaction.run(session, fn);
+    await session.exec("COMMIT");
     return result;
   } catch (error) {
-    await connection.exec("ROLLBACK");
+    await session.exec("ROLLBACK").catch(() => {});
     throw error;
+  } finally {
+    session.release();
   }
 }
 

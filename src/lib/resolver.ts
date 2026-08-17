@@ -137,6 +137,30 @@ export function stripDuration(text: string): string {
   return text.replace(DURATION_PHRASE, " ").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Walks the word spans of `words` and returns whatever `lookup` first matches.
+ *
+ * Order is latest-ending first, then longest, so the first hit is the best one
+ * and the search can stop there. `anchored` restricts spans to those starting at
+ * the first word, for "does the sentence *open* with a known alias?".
+ */
+function findSpan<T>(
+  words: string[],
+  lookup: (span: string) => T | undefined,
+  anchored = false,
+): T | undefined {
+  for (let end = words.length; end > 0; end--) {
+    for (let start = 0; start < end; start++) {
+      if (anchored && start > 0) break;
+      const span = words.slice(start, end).join(" ");
+      if (span.length < 3) continue;
+      const hit = lookup(span);
+      if (hit !== undefined) return hit;
+    }
+  }
+  return undefined;
+}
+
 // --- the cascade ----------------------------------------------------------
 
 /** Ranked candidates by lexical similarity. Also feeds the LLM's context. */
@@ -207,45 +231,34 @@ export async function resolveDeterministic(
 
   // 3. A known alias appears inside the sentence ("worked on backend today").
   //
-  // When several match, prefer the one that ends latest: in "worked on my
-  // startup backend" the subject is the backend, not the startup. Length breaks
-  // ties so the more specific alias wins.
-  let bestAlias: { id: string; end: number; length: number } | null = null;
-  let longestAliasAtStart = 0;
+  // Rather than testing all ~450 aliases against the text, look the text's own
+  // word spans up in the alias map. A short sentence is a couple of dozen map
+  // hits instead of hundreds of string scans, and spans are whole words by
+  // construction — no risk of finding "ran" inside "drank".
+  //
+  // Scanning spans by latest end first, then longest, means the first hit is
+  // already the winner: in "worked on my startup backend" the subject is the
+  // backend, not the startup.
+  const words = key.split(" ");
   // "I studied…" opens with the verb as far as this rule is concerned.
   const opener = key.replace(/^(?:i|we|just)\s+/, "");
+  const openerWords = opener.split(" ");
 
-  // Whole words only. Matching raw substrings would find "ran" inside "drank"
-  // and "art" inside "started" — padding both sides forces a word boundary.
-  const padded = ` ${key} `;
-
-  for (const [alias, activityId] of aliases) {
-    if (alias.length < 3 || alias.length > key.length) continue;
-    const at = padded.lastIndexOf(` ${alias} `);
-    if (at === -1) continue;
-    if (opener === alias || opener.startsWith(`${alias} `)) {
-      longestAliasAtStart = Math.max(longestAliasAtStart, alias.length);
-    }
-
-    // `at` in the padded string is the alias's start index in `key`.
-    const end = at + alias.length;
-    if (!bestAlias || end > bestAlias.end || (end === bestAlias.end && alias.length > bestAlias.length)) {
-      bestAlias = { id: activityId, end, length: alias.length };
-    }
-  }
+  const bestAlias = findSpan(words, (span) => aliases.get(span));
 
   // 3b. A framing verb wins over the topic that follows it — unless a *longer*
   // alias also opens the sentence, which means something more specific was said
   // ("read a paper" rather than a bare "read").
+  const aliasAtStart = findSpan(openerWords, (span) => (aliases.has(span) ? span : undefined), true);
   for (const { pattern, slug } of FRAMING_VERBS) {
     const match = opener.match(pattern);
-    if (!match || longestAliasAtStart > match[0].length) continue;
+    if (!match || (aliasAtStart?.length ?? 0) > match[0].length) continue;
     const activity = activities.find((candidate) => candidate.slug === slug);
     if (activity) return { activity, confidence: 0.93, method: "keyword" };
   }
 
   if (bestAlias) {
-    const activity = byId.get(bestAlias.id);
+    const activity = byId.get(bestAlias);
     if (activity) return { activity, confidence: 0.92, method: "alias" };
   }
 

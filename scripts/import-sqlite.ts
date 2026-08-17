@@ -115,14 +115,6 @@ for (const row of read<Record<string, string>>(`SELECT * FROM group_members`)) {
   );
 }
 
-for (const row of read<Record<string, string>>(`SELECT * FROM user_achievements`)) {
-  await run(
-    `INSERT INTO user_achievements (user_id, achievement_id, earned_at)
-     VALUES (?, ?, ?) ON CONFLICT (user_id, achievement_id) DO NOTHING`,
-    row.user_id, row.achievement_id, row.earned_at,
-  );
-}
-
 // --- rows that reference an activity ---------------------------------------
 
 let logs = 0;

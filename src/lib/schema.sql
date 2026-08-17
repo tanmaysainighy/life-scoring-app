@@ -43,8 +43,7 @@ CREATE TABLE IF NOT EXISTS activities (
   icon             TEXT NOT NULL DEFAULT '✨',
   description      TEXT NOT NULL DEFAULT '',
   keywords         TEXT NOT NULL DEFAULT '',  -- space-separated, for matching
-  status           TEXT NOT NULL DEFAULT 'active',  -- active | proposed | merged | disabled
-  merged_into      TEXT REFERENCES activities(id) ON DELETE SET NULL,
+  status           TEXT NOT NULL DEFAULT 'active',  -- active | disabled
   scoring_version  INTEGER NOT NULL DEFAULT 1,
   origin           TEXT NOT NULL DEFAULT 'seed',    -- seed | derived
   created_at       TEXT NOT NULL,
@@ -125,15 +124,8 @@ CREATE TABLE IF NOT EXISTS group_members (
 CREATE INDEX IF NOT EXISTS idx_gm_user  ON group_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_gm_group ON group_members(group_id);
 
--- ---------------------------------------------------------------------------
--- Achievements
--- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS user_achievements (
-  user_id        TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  achievement_id TEXT NOT NULL,
-  earned_at      TEXT NOT NULL,
-  PRIMARY KEY (user_id, achievement_id)
-);
+-- Achievements are derived from the stats the profile already computes (see
+-- achievements.ts), so there is no table for them — nothing to keep in sync.
 
 -- Activities the resolver wanted but couldn't confidently place. Reviewed by an
 -- admin; nothing is scored from this table.
