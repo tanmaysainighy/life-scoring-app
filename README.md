@@ -59,9 +59,13 @@ past one instance. Any host that runs a Dockerfile works.
 3. Deploy. The schema and taxonomy apply themselves on boot, and `/api/health`
    reports readiness.
 
-Coming from the old SQLite build? `DATABASE_URL=... npm run import:sqlite` copies
-accounts, groups, logs and memory across. It remaps every activity reference
-through its slug rather than its id, and is safe to run more than once.
+Coming from the old SQLite build? Put `DATABASE_URL` in `.env` and run
+`npm run import:sqlite` to copy accounts, groups, logs and memory across. It
+remaps every activity reference through its slug rather than its id, and is safe
+to run more than once.
+
+The scripts read `.env` themselves (via Node's `--env-file-if-exists`), so there
+is no shell-specific `VAR=value` prefix to get right.
 
 To reset all data, delete the `data/` directory.
 
