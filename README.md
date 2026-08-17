@@ -41,11 +41,19 @@ No configuration is required. To enable the LLM fallback, copy `.env.example` to
 [console.groq.com/keys](https://console.groq.com/keys)).
 
 ```bash
-npm test        # 94 tests, no database server or network needed
-npm run build   # production build
-npm start       # production server
-npm run seed    # re-apply the taxonomy after editing taxonomy.ts
+npm test          # 97 tests, no database server or network needed
+npm run build     # production build
+npm start         # production server
+npm run seed      # re-apply the taxonomy after editing taxonomy.ts
+npm run check:llm # is the model reachable, and does classification work?
 ```
+
+### Checking the model
+
+Every LLM failure degrades gracefully — a dead key or a retired model id leaves
+the app working, just without the fallback, so the only symptom is that unusual
+phrasings quietly stop being understood. `npm run check:llm` makes one real call
+and says which of those it is. Worth running after any provider change.
 
 ## Deploying
 

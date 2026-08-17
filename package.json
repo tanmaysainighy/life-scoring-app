@@ -14,7 +14,8 @@
     "seed": "node --experimental-strip-types --env-file-if-exists=.env --import ./tests/register.mjs scripts/seed.ts",
     "test": "node --experimental-strip-types --import ./tests/register.mjs --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "import:sqlite": "node --experimental-strip-types --env-file-if-exists=.env --import ./tests/register.mjs scripts/import-sqlite.ts"
+    "import:sqlite": "node --experimental-strip-types --env-file-if-exists=.env --import ./tests/register.mjs scripts/import-sqlite.ts",
+    "check:llm": "node --experimental-strip-types --env-file-if-exists=.env --import ./tests/register.mjs scripts/check-llm.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.5",
