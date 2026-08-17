@@ -31,6 +31,19 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((b - a) / 86_400_000);
 }
 
+/** "09:12" in the user's own timezone. */
+export function localTime(date: Date, timezone: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: false,
+    }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: "UTC", hour: "2-digit", minute: "2-digit", hour12: false,
+    }).format(date);
+  }
+}
+
 /** Monday-start week containing `day`. */
 export function startOfWeek(day: string): string {
   const date = new Date(`${day}T00:00:00Z`);

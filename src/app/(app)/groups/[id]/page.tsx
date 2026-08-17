@@ -1,47 +1,64 @@
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { getGroup, isMember, getGroupLeaderboard } from "@/lib/queries";
+import { getGroup, isMember, getGroupLeaderboard, type LeaderboardPeriod } from "@/lib/queries";
 import { localDay } from "@/lib/dates";
 import { Leaderboard } from "@/components/Leaderboard";
 import { LeaveGroup } from "@/components/GroupActions";
-import { Card } from "@/components/ui";
 import { InviteCode } from "@/components/InviteCode";
+import { Section } from "@/components/Section";
 
 export const dynamic = "force-dynamic";
 
-export default async function GroupPage({ params }: { params: Promise<{ id: string }> }) {
+const PERIODS: LeaderboardPeriod[] = ["today", "week", "month", "all"];
+
+export default async function GroupPage({
+  params, searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ period?: string }>;
+}) {
   const user = await requireUser();
   const { id } = await params;
+  const requested = (await searchParams).period as LeaderboardPeriod | undefined;
+  const period: LeaderboardPeriod = requested && PERIODS.includes(requested) ? requested : "week";
 
   const group = await getGroup(id);
   // Non-members get a 404 rather than a 403 — no group's existence is leaked.
   if (!group || !(await isMember(group.id, user.id))) notFound();
 
-  const today = localDay(new Date(), user.timezone);
-  const leaderboard = await getGroupLeaderboard(group.id, "week", today);
+  const leaderboard = await getGroupLeaderboard(group.id, period, localDay(new Date(), user.timezone));
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start gap-3">
-        <span className="text-3xl" aria-hidden>{group.emoji}</span>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl font-semibold tracking-tight">{group.name}</h1>
-          <p className="text-sm text-muted">{leaderboard.length} {leaderboard.length === 1 ? "member" : "members"}</p>
+    <div className="mx-auto max-w-2xl">
+      <header className="enter flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="t-heading flex items-center gap-2.5">
+            <span aria-hidden>{group.emoji}</span>
+            <span className="truncate">{group.name}</span>
+          </h1>
+          <p className="t-meta mt-1.5">
+            {leaderboard.length} {leaderboard.length === 1 ? "member" : "members"}
+          </p>
         </div>
         <LeaveGroup groupId={group.id} />
-      </div>
+      </header>
 
-      {group.description && <p className="text-sm text-muted">{group.description}</p>}
+      {group.description && <p className="t-secondary enter mt-4 text-[0.9375rem]">{group.description}</p>}
 
-      <InviteCode code={group.invite_code} />
-
-      <Card>
+      <div className="enter mt-12" style={{ "--i": 1 } as React.CSSProperties}>
         <Leaderboard
-          endpoint={`/api/groups/${group.id}/leaderboard`}
-          initial={leaderboard}
+          rows={leaderboard}
+          period={period}
+          basePath={`/groups/${group.id}`}
           currentUserId={user.id}
         />
-      </Card>
+      </div>
+
+      <div className="enter mt-14" style={{ "--i": 2 } as React.CSSProperties}>
+        <Section title="Invite">
+          <InviteCode code={group.invite_code} />
+        </Section>
+      </div>
     </div>
   );
 }

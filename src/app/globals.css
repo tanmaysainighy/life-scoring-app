@@ -1,214 +1,267 @@
 @import "tailwindcss";
 
 /*
-  One accent, two neutrals, generous space. No web fonts: the system stack
-  renders instantly and looks right on every platform, which matters more here
-  than a bespoke typeface.
+  LifeScore — a personal operating system with a game underneath.
+
+  The system is deliberately thin: a type scale, a spacing rhythm, hairline
+  rules, and one accent. Structure comes from typography and whitespace, not
+  from putting every fact in its own bordered box. Remove every shadow and the
+  layout should still hold.
+
+  Colour carries meaning and nothing else:
+    accent  XP earned, progress, the reader's own row
+    gain    a number that went up
+    flame   an active streak
+  Primary actions are solid ink, so the accent is never spent on chrome.
 */
 
 @theme {
-  --font-sans: ui-sans-serif, -apple-system, "Segoe UI Variable Display", "Segoe UI",
-    system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --font-display: var(--f-display), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--f-sans), ui-sans-serif, system-ui, sans-serif;
 
   --color-bg: var(--bg);
   --color-surface: var(--surface);
-  --color-raised: var(--raised);
-  --color-line: var(--line);
+  --color-sunken: var(--sunken);
+  --color-rule: var(--rule);
   --color-ink: var(--ink);
   --color-muted: var(--muted);
   --color-faint: var(--faint);
   --color-accent: var(--accent);
-  --color-accent-soft: var(--accent-soft);
-  --color-positive: var(--positive);
+  --color-gain: var(--gain);
+  --color-flame: var(--flame);
   --color-warn: var(--warn);
-
-  --radius-card: 16px;
 }
 
 :root {
-  --bg: #fafafc;
+  --bg:      #fcfcfb;
   --surface: #ffffff;
-  --raised: #ffffff;
-  --line: #e8e8ee;
-  --ink: #0e0e14;
-  --muted: #63636f;
-  --faint: #9494a3;
-  --accent: #5b4bf5;
-  --accent-soft: #eeecff;
-  --positive: #12925e;
-  --warn: #b45309;
-  --shadow-card: 0 1px 2px rgb(16 16 32 / 0.04), 0 8px 24px -12px rgb(16 16 32 / 0.10);
-  --shadow-pop: 0 12px 40px -12px rgb(16 16 32 / 0.24);
+  --sunken:  #f3f2f0;
+  --rule:    #e6e4e0;   /* hairlines, not borders */
+  --ink:     #121212;
+  --muted:   #5a5954;
+  --faint:   #928f88;
+  --accent:  #a8620a;   /* amber, darkened to carry text on light */
+  --gain:    #146b46;
+  --flame:   #c2410c;
+  --warn:    #a02c1c;
+  --on-ink:  #fcfcfb;   /* text on a solid-ink surface */
   color-scheme: light;
-}
-
-:root[data-theme="dark"] {
-  --bg: #07070b;
-  --surface: #101017;
-  --raised: #16161f;
-  --line: #23232f;
-  --ink: #f4f4f7;
-  --muted: #9c9cb0;
-  --faint: #6a6a7d;
-  --accent: #8b7cff;
-  --accent-soft: #1c1938;
-  --positive: #3ddc97;
-  --warn: #f0b429;
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
-  --shadow-pop: 0 16px 48px -12px rgb(0 0 0 / 0.7);
-  color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #07070b;
-    --surface: #101017;
-    --raised: #16161f;
-    --line: #23232f;
-    --ink: #f4f4f7;
-    --muted: #9c9cb0;
-    --faint: #6a6a7d;
-    --accent: #8b7cff;
-    --accent-soft: #1c1938;
-    --positive: #3ddc97;
-    --warn: #f0b429;
-    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
-    --shadow-pop: 0 16px 48px -12px rgb(0 0 0 / 0.7);
+    --bg:      #0a0a0a;
+    --surface: #101010;
+    --sunken:  #171717;
+    --rule:    #232322;
+    --ink:     #f2f1ee;
+    --muted:   #9e9c96;
+    --faint:   #6b6963;
+    --accent:  #f0a23c;
+    --gain:    #4ac585;
+    --flame:   #ff7a45;
+    --warn:    #ff8f73;
+    --on-ink:  #0a0a0a;
     color-scheme: dark;
   }
 }
 
-* { border-color: var(--line); }
-
-html {
-  -webkit-text-size-adjust: 100%;
-  scrollbar-gutter: stable;
+:root[data-theme="dark"] {
+  --bg:      #0a0a0a;
+  --surface: #101010;
+  --sunken:  #171717;
+  --rule:    #232322;
+  --ink:     #f2f1ee;
+  --muted:   #9e9c96;
+  --faint:   #6b6963;
+  --accent:  #f0a23c;
+  --gain:    #4ac585;
+  --flame:   #ff7a45;
+  --warn:    #ff8f73;
+  --on-ink:  #0a0a0a;
+  color-scheme: dark;
 }
+
+* { border-color: var(--rule); }
+html { -webkit-text-size-adjust: 100%; scrollbar-gutter: stable; }
 
 body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-  font-feature-settings: "cv11", "ss01";
 }
 
-::selection { background: var(--accent); color: #fff; }
+::selection { background: var(--ink); color: var(--on-ink); }
 
-:where(button, a, input, textarea, select):focus-visible {
+:where(button, a, input, textarea, select, summary, [tabindex]):focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 8px;
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
-/* --- primitives ---------------------------------------------------------- */
+/* --- type scale ----------------------------------------------------------
+   display → heading → section → body → secondary → meta
+   One family for figures and headings, one for reading. Weight does the
+   hierarchy work; almost nothing else is bold.                             */
 
-.card {
+.t-display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(3.75rem, 13vw, 6rem);
+  line-height: .85;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+}
+
+.t-figure {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.t-heading {
+  font-family: var(--font-display);
+  font-weight: 550;
+  font-size: clamp(1.35rem, 3.5vw, 1.6rem);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+/* Section markers. Small, spaced, quiet — they organise without shouting. */
+.t-section {
+  font-size: .6875rem;
+  font-weight: 500;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.t-meta { font-size: .8125rem; color: var(--faint); }
+.t-secondary { color: var(--muted); }
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* --- structure -----------------------------------------------------------
+   A hairline is the default separator. Sections are separated by space and a
+   single rule, never by a box each.                                        */
+
+.rule-t { border-top: 1px solid var(--rule); }
+.rule-b { border-bottom: 1px solid var(--rule); }
+
+/* The one place a raised surface is justified: transient overlays. */
+.sheet {
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  box-shadow: 0 20px 50px -24px rgb(0 0 0 / .3);
 }
+
+/* --- controls ------------------------------------------------------------ */
 
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  border-radius: 10px;
-  font-weight: 550;
-  font-size: 0.875rem;
-  padding: 0.55rem 0.95rem;
-  transition: background-color 120ms ease, color 120ms ease, transform 120ms ease, opacity 120ms ease;
+  gap: .5rem;
+  min-height: 44px;
+  padding: 0 1.15rem;
+  border-radius: 9px;
+  font-size: .9375rem;
+  font-weight: 500;
   cursor: pointer;
-  white-space: nowrap;
+  transition: background-color .14s ease, color .14s ease, border-color .14s ease, opacity .14s ease;
 }
-.btn:active:not(:disabled) { transform: scale(0.975); }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn-sm { min-height: 36px; padding: 0 .7rem; font-size: .8125rem; border-radius: 7px; }
 
-.btn-primary { background: var(--accent); color: #fff; }
-.btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+/*
+  Small controls and inline links stay visually small but must still be easy to
+  hit. This grows the touch area to 44px around the element without adding any
+  layout height, so density and accessibility don't have to trade off.
+*/
+.hit { position: relative; }
+.hit::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 44px;
+  transform: translateY(-50%);
+}
+@media (pointer: fine) { .hit::after { display: none; } }
 
-.btn-ghost { background: transparent; color: var(--muted); }
-.btn-ghost:hover:not(:disabled) { background: var(--accent-soft); color: var(--ink); }
+/* Primary is solid ink — the accent stays reserved for data. */
+.btn-primary { background: var(--ink); color: var(--on-ink); }
+.btn-primary:hover:not(:disabled) { opacity: .86; }
 
-.btn-outline { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
-.btn-outline:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.btn-quiet { background: var(--sunken); color: var(--ink); }
+.btn-quiet:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 10%, var(--sunken)); }
+
+.btn-bare { background: transparent; color: var(--muted); padding: 0 .5rem; }
+.btn-bare:hover:not(:disabled) { color: var(--ink); }
 
 .field {
   width: 100%;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 0.7rem 0.9rem;
-  font-size: 0.95rem;
+  min-height: 44px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  padding: .55rem 0;
+  font-size: 1rem;            /* 16px — stops iOS zooming on focus */
   color: var(--ink);
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition: border-color .14s ease;
 }
 .field::placeholder { color: var(--faint); }
-.field:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
-}
+.field:focus { outline: none; border-bottom-color: var(--ink); }
 
-.tabular { font-variant-numeric: tabular-nums; }
+/* --- motion --------------------------------------------------------------
+   Short, and only where it explains something: entry, XP landing, reveal.  */
 
-/* --- motion -------------------------------------------------------------- */
-
-@keyframes rise {
-  from { opacity: 0; transform: translateY(6px); }
+@keyframes fade-up {
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
   to   { opacity: 1; transform: none; }
 }
-.rise { animation: rise 260ms cubic-bezier(0.22, 1, 0.36, 1) both; }
-
-@keyframes xp-pop {
-  0%   { opacity: 0; transform: translateY(10px) scale(0.9); }
-  35%  { opacity: 1; transform: translateY(-2px) scale(1.06); }
-  100% { opacity: 1; transform: none; }
-}
-.xp-pop { animation: xp-pop 420ms cubic-bezier(0.22, 1, 0.36, 1) both; }
-
-@keyframes xp-float {
-  0%   { opacity: 0; transform: translateY(0) scale(0.9); }
-  20%  { opacity: 1; transform: translateY(-14px) scale(1); }
-  100% { opacity: 0; transform: translateY(-46px) scale(1); }
-}
-.xp-float { animation: xp-float 1100ms cubic-bezier(0.22, 1, 0.36, 1) both; }
-
-@keyframes level-burst {
-  0%   { opacity: 0; transform: scale(0.85); }
-  40%  { opacity: 1; transform: scale(1.04); }
-  100% { opacity: 1; transform: scale(1); }
-}
-.level-burst { animation: level-burst 500ms cubic-bezier(0.22, 1, 0.36, 1) both; }
-
-@keyframes shimmer {
-  100% { transform: translateX(100%); }
-}
-.skeleton {
-  position: relative;
-  overflow: hidden;
-  background: var(--raised);
-  border-radius: 8px;
-}
-.skeleton::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ink) 6%, transparent), transparent);
-  animation: shimmer 1.4s infinite;
+.enter {
+  animation: fade-up .26s cubic-bezier(.2,.7,.3,1) both;
+  animation-delay: calc(var(--i, 0) * 35ms);
 }
 
-.bar-fill { transition: width 620ms cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes lift-away {
+  0%   { opacity: 0; transform: translateY(2px); }
+  25%  { opacity: 1; transform: translateY(-8px); }
+  100% { opacity: 0; transform: translateY(-38px); }
+}
+.lift-away { animation: lift-away .9s cubic-bezier(.2,.7,.3,1) both; }
+
+@keyframes settle {
+  from { opacity: 0; transform: scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+.settle { animation: settle .2s cubic-bezier(.2,.7,.3,1) both; }
+
+/* Bars and meters share one curve so the page moves as one system. */
+.grow-h { transition: height .55s cubic-bezier(.2,.7,.3,1); }
+.grow-w { transition: width .55s cubic-bezier(.2,.7,.3,1); }
+
+.tap { transition: opacity .12s ease, background-color .14s ease; }
+.tap:active { opacity: .6; }
+
+/* Native disclosure, styled. No JavaScript for expanding a row. */
+details > summary { list-style: none; cursor: pointer; }
+details > summary::-webkit-details-marker { display: none; }
+details[open] > summary .chev { transform: rotate(90deg); }
+.chev { transition: transform .16s ease; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
-    animation-duration: 0.01ms !important;
+    animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition-duration: .01ms !important;
   }
 }

@@ -13,11 +13,15 @@ import type { Activity } from "./resolver";
  */
 
 const ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
-const DEFAULT_MODEL = "llama-3.3-70b-versatile";
+// Providers retire model ids without warning, which is why this is overridable
+// and why `npm run check:llm` exists. Must support tool calling.
+const DEFAULT_MODEL = "openai/gpt-oss-120b";
 const TIMEOUT_MS = 8_000;
 const MAX_INPUT_CHARS = 500;
 
-const MODEL = process.env.GROQ_MODEL || DEFAULT_MODEL;
+/** The model actually in use. Exported so diagnostics can't drift from it. */
+export const MODEL = process.env.GROQ_MODEL || DEFAULT_MODEL;
+export const GROQ_ENDPOINT = ENDPOINT;
 
 export const LLM_AVAILABLE = Boolean(process.env.GROQ_API_KEY);
 
@@ -90,6 +94,32 @@ Rules, in order of importance:
 Always answer by calling the record_interpretation tool.`;
 
 /**
+ * A dead key or a retired model id disables the fallback permanently, and
+ * because every failure degrades gracefully the app carries on looking fine —
+ * so the only symptom is that unusual entries quietly stop being understood.
+ * Say plainly what broke, once per cause, rather than logging a raw body on
+ * every request.
+ */
+const reported = new Set<number>();
+function reportOutage(status: number, body: string) {
+  if (reported.has(status)) return;
+  reported.add(status);
+
+  const cause =
+    status === 401 ? "GROQ_API_KEY is not valid — it may have been rotated."
+    : status === 404 ? `the model "${MODEL}" no longer exists. Set GROQ_MODEL to a current tool-calling model.`
+    : status === 429 ? "rate limited or out of quota."
+    : "an unexpected response.";
+
+  console.error(
+    `[llm] Groq returned ${status}: ${cause}\n` +
+    `      Activity classification is falling back to deterministic matching only.\n` +
+    `      Run \`npm run check:llm\` to diagnose.\n` +
+    `      ${body.slice(0, 200)}`,
+  );
+}
+
+/**
  * Classifies one entry against a pre-filtered candidate list.
  * Returns null on any failure — timeout, HTTP error, bad JSON, schema
  * violation, or an activity_id that wasn't in the candidates. Callers must
@@ -136,7 +166,7 @@ export async function classifyActivity(
     });
 
     if (!response.ok) {
-      console.error("[llm] groq responded", response.status, await response.text().catch(() => ""));
+      reportOutage(response.status, await response.text().catch(() => ""));
       return null;
     }
 
