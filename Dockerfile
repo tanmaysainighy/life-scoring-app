@@ -22,6 +22,11 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 
+# Docker sets HOSTNAME to the container id, and Next's standalone server binds
+# to whatever HOSTNAME says — which fails with ENOTFOUND and never opens a
+# socket, so the platform's proxy answers 502. Pin it to all interfaces.
+ENV HOSTNAME=0.0.0.0
+
 RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
 
 # The standalone output carries only what the server actually needs.
