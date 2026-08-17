@@ -48,7 +48,7 @@ export function GroupActions() {
             key={value}
             onClick={() => { setTab(value); setError(null); }}
             className={`rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
-              tab === value ? "bg-accent-soft text-accent" : "text-muted hover:text-ink"
+              tab === value ? "bg-accent-soft text-accent-text" : "text-muted hover:text-ink"
             }`}
           >
             {value === "create" ? "Create group" : "Join with code"}

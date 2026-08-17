@@ -100,7 +100,7 @@ export default async function ProfilePage() {
         <SectionTitle>Groups</SectionTitle>
         {groups.length === 0 ? (
           <p className="py-2 text-sm text-muted">
-            You're not in any groups. <Link href="/groups" className="text-accent hover:underline">Find one →</Link>
+            You're not in any groups. <Link href="/groups" className="text-accent-text hover:underline">Find one →</Link>
           </p>
         ) : (
           <ul className="divide-y">

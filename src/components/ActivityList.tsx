@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { formatDuration, formatDurationLong } from "@/lib/duration";
-import { EmptyState } from "./ui";
+import { EmptyState, Glyph } from "./ui";
 
 /**
  * Activity rows with the score explanation, editing and deletion.
@@ -28,13 +28,13 @@ export function ActivityList({ logs, emptyBody }: { logs: LogItem[]; emptyBody: 
     return <EmptyState icon="🌤️" title="Nothing logged yet" body={emptyBody} />;
   }
   return (
-    <ul className="divide-y">
-      {logs.map((log) => <Row key={log.id} log={log} />)}
+    <ul className="flex flex-col gap-0.5">
+      {logs.map((log, index) => <Row key={log.id} log={log} index={index} />)}
     </ul>
   );
 }
 
-function Row({ log }: { log: LogItem }) {
+function Row({ log, index }: { log: LogItem; index: number }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [minutes, setMinutes] = useState(log.duration_minutes);
@@ -74,26 +74,26 @@ function Row({ log }: { log: LogItem }) {
   }
 
   return (
-    <li className="py-2.5 first:pt-0 last:pb-0">
-      <div className="flex items-center gap-3">
-        <span className="text-lg leading-none" aria-hidden>{log.activity_icon}</span>
-        <button
-          onClick={() => setOpen((value) => !value)}
-          className="min-w-0 flex-1 text-left"
-          aria-expanded={open}
-        >
-          <p className="truncate text-[0.9375rem] font-medium">{log.activity_name}</p>
-          <p className="tabular truncate text-xs text-faint">
+    <li className="rise" style={{ "--i": index } as React.CSSProperties}>
+      <button
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="press -mx-2 flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left hover:bg-raised"
+      >
+        <Glyph icon={log.activity_icon} size={38} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[0.9375rem] font-medium">{log.activity_name}</span>
+          <span className="tabular block truncate text-xs text-faint">
             {formatDuration(log.duration_minutes)} · {log.raw_text}
-          </p>
-        </button>
-        <span className="tabular shrink-0 text-sm font-semibold text-accent">+{log.xp}</span>
-      </div>
+          </span>
+        </span>
+        <span className="figure shrink-0 text-lg text-accent-text">+{log.xp}</span>
+      </button>
 
       {open && (
-        <div className="rise mt-2 ml-8 rounded-xl border bg-raised p-3 text-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-faint">Scored using</p>
-          <p className="mt-1">
+        <div className="rise ml-12 mt-1 mb-1 rounded-xl border bg-raised p-3.5 text-sm">
+          <p className="label">Scored using</p>
+          <p className="mt-1.5 font-medium">
             {log.activity_name} — <span className="tabular">{log.base_xp_per_hour} XP/hour</span>
           </p>
           <p className="tabular mt-1 text-muted">
@@ -110,15 +110,18 @@ function Row({ log }: { log: LogItem }) {
                 className="field max-w-28 py-1 text-sm"
                 aria-label="Duration in minutes"
               />
-              <button onClick={save} disabled={busy} className="btn btn-primary px-3 py-1 text-xs">Save</button>
-              <button onClick={() => { setEditing(false); setMinutes(log.duration_minutes); }} className="btn btn-ghost px-2 py-1 text-xs">
+              <button onClick={save} disabled={busy} className="btn btn-primary btn-sm">Save</button>
+              <button
+                onClick={() => { setEditing(false); setMinutes(log.duration_minutes); }}
+                className="btn btn-ghost btn-sm"
+              >
                 Cancel
               </button>
             </div>
           ) : (
             <div className="mt-3 flex gap-2">
-              <button onClick={() => setEditing(true)} className="btn btn-outline px-3 py-1 text-xs">Edit</button>
-              <button onClick={remove} disabled={busy} className="btn btn-ghost px-3 py-1 text-xs">Delete</button>
+              <button onClick={() => setEditing(true)} className="btn btn-outline btn-sm">Edit</button>
+              <button onClick={remove} disabled={busy} className="btn btn-ghost btn-sm">Delete</button>
             </div>
           )}
           {error && <p className="mt-2 text-xs text-warn">{error}</p>}

@@ -39,7 +39,7 @@ export default async function LogPage({
           <Card key={day}>
             <div className="mb-3 flex items-baseline justify-between gap-3">
               <h2 className="text-sm font-semibold">{formatDay(day)}</h2>
-              <p className="tabular text-xs text-faint">{formatDuration(minutes)} · <span className="font-semibold text-accent">+{xp} XP</span></p>
+              <p className="tabular text-xs text-faint">{formatDuration(minutes)} · <span className="font-semibold text-accent-text">+{xp} XP</span></p>
             </div>
             <ActivityList logs={dayLogs} emptyBody="" />
           </Card>

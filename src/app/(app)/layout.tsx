@@ -16,8 +16,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-30 border-b bg-bg/80 backdrop-blur-lg">
-        <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-5">
-          <Link href="/" aria-label="LifeScore home"><Logo /></Link>
+        <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4 sm:px-6">
+          <Link href="/" aria-label="LifeScore home" className="press -ml-2 flex min-h-11 items-center rounded-xl px-2">
+            <Logo />
+          </Link>
           <div className="ml-auto flex items-center gap-1">
             <ThemeToggle />
             <Link href="/profile" className="btn btn-ghost px-1.5" aria-label="Your profile">
@@ -30,7 +32,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-5xl gap-8 px-5 pb-24 pt-6 lg:pb-10">
+      <div className="mx-auto flex max-w-6xl gap-8 px-4 pb-28 pt-6 sm:px-6 lg:pb-12">
         <Sidebar />
         <main className="min-w-0 flex-1">{children}</main>
       </div>

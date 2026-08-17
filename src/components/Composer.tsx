@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { formatDuration } from "@/lib/duration";
+import { Glyph } from "./ui";
 
 /**
  * The one input that matters.
@@ -185,7 +186,7 @@ export function Composer({ lifetimeXp }: { lifetimeXp: number }) {
     <div className="relative">
       <div className="card overflow-hidden">
         <div className="p-4 sm:p-5">
-          <label htmlFor="composer" className="text-[0.8125rem] font-semibold uppercase tracking-[0.08em] text-faint">
+          <label htmlFor="composer" className="label">
             What did you do?
           </label>
           <textarea
@@ -254,7 +255,7 @@ export function Composer({ lifetimeXp }: { lifetimeXp: number }) {
 
       {floating !== null && (
         <div className="pointer-events-none absolute inset-x-0 -top-2 flex justify-center">
-          <span className="xp-float text-lg font-semibold text-accent">+{floating} XP</span>
+          <span className="xp-float text-lg font-semibold text-accent-text">+{floating} XP</span>
         </div>
       )}
 
@@ -370,17 +371,17 @@ function Preview({
 
   return (
     <div className="rise border-t bg-raised p-4 sm:p-5">
-      <div className="flex items-start gap-3">
-        <span className="text-2xl leading-none" aria-hidden>{proposal.activity.icon}</span>
+      <div className="flex items-center gap-3">
+        <Glyph icon={proposal.activity.icon} size={44} />
         <div className="min-w-0 flex-1">
           <p className="truncate font-semibold">{proposal.activity.name}</p>
           <p className="tabular mt-0.5 text-sm text-muted">
             {formatDuration(proposal.durationMinutes)} · {hoursLabel} h × {proposal.activity.base_xp_per_hour} XP/h
           </p>
         </div>
-        <div className="xp-pop text-right">
-          <div className="tabular text-xl font-semibold text-accent">+{xp}</div>
-          <div className="text-[0.6875rem] uppercase tracking-wide text-faint">XP</div>
+        <div className="pop text-right">
+          <div className="figure text-3xl text-accent-text">+{xp}</div>
+          <div className="label mt-0.5">XP</div>
         </div>
       </div>
 
@@ -431,11 +432,15 @@ function Preview({
 
 function LevelUpBurst({ level }: { level: number }) {
   return (
-    <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center">
-      <div className="level-burst card px-8 py-6 text-center" style={{ boxShadow: "var(--shadow-pop)" }}>
-        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">Level up</div>
-        <div className="mt-1 text-4xl" aria-hidden>🎉</div>
-        <div className="tabular mt-1 text-3xl font-semibold">Level {level}</div>
+    <div
+      className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: "color-mix(in srgb, var(--bg) 55%, transparent)" }}
+      role="status"
+    >
+      <div className="pop card px-10 py-8 text-center" style={{ boxShadow: "var(--shadow-pop)" }}>
+        <div className="label" style={{ color: "var(--accent-text)" }}>Level up</div>
+        <div className="figure mt-2 text-6xl" style={{ color: "var(--accent-text)" }}>{level}</div>
+        <div className="mt-2 text-sm text-muted">Nicely done.</div>
       </div>
     </div>
   );

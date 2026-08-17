@@ -51,7 +51,7 @@ export function Leaderboard({
             key={value}
             onClick={() => select(value)}
             className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-              period === value ? "bg-accent-soft text-accent" : "text-muted hover:text-ink"
+              period === value ? "bg-accent-soft text-accent-text" : "text-muted hover:text-ink"
             }`}
           >
             {label}
@@ -71,7 +71,7 @@ export function Leaderboard({
             <Avatar name={row.name} hue={row.avatar_hue} size={30} />
             <span className="min-w-0 flex-1 truncate text-[0.9375rem]">
               {row.name}
-              {row.user_id === currentUserId && <span className="ml-1.5 text-xs text-accent">you</span>}
+              {row.user_id === currentUserId && <span className="ml-1.5 text-xs text-accent-text">you</span>}
             </span>
             <span className="tabular shrink-0 text-sm font-semibold">{row.xp.toLocaleString()}</span>
             <span className="text-xs text-faint">XP</span>
