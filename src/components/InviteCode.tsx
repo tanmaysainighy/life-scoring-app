@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-/** Shows the invite code with a copy button. */
+/** The code, and a way to copy it. Nothing else needed. */
 export function InviteCode({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -17,12 +17,11 @@ export function InviteCode({ code }: { code: string }) {
   }
 
   return (
-    <div className="card flex items-center gap-3 p-4">
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium uppercase tracking-wide text-faint">Invite code</p>
-        <p className="mt-0.5 font-mono text-lg font-semibold tracking-[0.25em]">{code}</p>
-      </div>
-      <button onClick={copy} className="btn btn-outline text-xs">{copied ? "Copied" : "Copy"}</button>
+    <div className="flex items-baseline justify-between gap-4">
+      <p className="t-figure text-xl tracking-[0.2em]">{code}</p>
+      <button onClick={copy} className="hit btn btn-bare btn-sm" aria-live="polite">
+        {copied ? "Copied" : "Copy"}
+      </button>
     </div>
   );
 }

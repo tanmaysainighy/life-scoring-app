@@ -4,152 +4,119 @@ import { getDashboard } from "@/lib/queries";
 import { greetingFor } from "@/lib/dates";
 import { formatDuration } from "@/lib/duration";
 import { Composer } from "@/components/Composer";
-import { ActivityList } from "@/components/ActivityList";
-import { CountUp } from "@/components/CountUp";
-import { Card, SectionTitle, EmptyState, LevelArc, Glyph } from "@/components/ui";
+import { Timeline } from "@/components/Timeline";
+import { WeekBars, SelfComparison } from "@/components/WeekBars";
+import { Section, FirstRun } from "@/components/Section";
 
 export const metadata = { title: "LifeScore" };
-// Session-dependent, so always rendered fresh — but from local queries, not
-// from any network call. No LLM is involved in loading this page.
+// Session-dependent, so always rendered fresh — but from local queries only.
+// No model call is ever on the path to rendering this page.
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const { totals, streak, level, logs, groups } = await getDashboard(user);
+  const { totals, streak, logs, groups, week, momentum } = await getDashboard(user);
+
   const minutesToday = logs.reduce((sum, log) => sum + log.duration_minutes, 0);
+  const hasHistory = totals.entries > 0;
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
-      {/* --- primary column ------------------------------------------------ */}
-      <div className="flex flex-col gap-5">
-        <section className="rise card overflow-hidden">
-          <div className="flex flex-col gap-6 p-5 sm:flex-row sm:items-center sm:gap-7 sm:p-6">
-            <LevelArc level={level.level} percent={level.percent} />
+    <div className="grid gap-x-14 gap-y-12 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
+      <div className="min-w-0">
+        {/* --- who am I, how am I doing today -------------------------------- */}
+        <header className="enter">
+          <p className="t-secondary text-[0.9375rem]">
+            {greetingFor(new Date(), user.timezone)}, {user.name.split(" ")[0]}.
+          </p>
 
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-muted">
-                {greetingFor(new Date(), user.timezone)}, {user.name.split(" ")[0]}
-              </p>
+          <p className="t-display mt-5">{totals.today.toLocaleString()}</p>
 
-              <div className="mt-1 flex items-end gap-2.5">
-                <span className="figure text-[3.25rem] sm:text-[4rem]">
-                  <CountUp value={totals.today} />
-                </span>
-                <span className="label mb-2.5">XP today</span>
-              </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5">
+            <span className="t-section">XP today</span>
 
-              <p className="tabular mt-1 text-sm text-muted">
-                {level.isMax
-                  ? `${totals.lifetime.toLocaleString()} XP — top level`
-                  : <>{level.xpToNext.toLocaleString()} XP to level {level.level + 1}</>}
-                {minutesToday > 0 && <> · {formatDuration(minutesToday)} logged</>}
-              </p>
-            </div>
+            {momentum.dailyAverage > 0 && totals.today > 0 && (
+              <span className="tabular text-[0.8125rem]" style={{
+                color: totals.today >= momentum.dailyAverage ? "var(--gain)" : "var(--muted)",
+              }}>
+                {totals.today >= momentum.dailyAverage ? "↑" : "↓"}{" "}
+                {Math.abs(Math.round(((totals.today - momentum.dailyAverage) / momentum.dailyAverage) * 100))}%
+                <span className="t-secondary"> from your 7-day average</span>
+              </span>
+            )}
 
-            <StreakBadge current={streak.current} atRisk={streak.atRisk} />
+            {streak.current > 0 && (
+              <span className="tabular text-[0.8125rem]" style={{ color: "var(--flame)" }}>
+                🔥 {streak.current} day{streak.current === 1 ? "" : "s"}
+                {streak.atRisk && <span className="t-secondary"> · log today to keep it</span>}
+              </span>
+            )}
           </div>
-        </section>
+        </header>
 
-        <div className="rise" style={{ "--i": 1 } as React.CSSProperties}>
+        {/* --- what should I log next (the centrepiece) --------------------- */}
+        <div className="enter mt-12" style={{ "--i": 1 } as React.CSSProperties}>
           <Composer lifetimeXp={totals.lifetime} />
         </div>
 
-        <Card className="rise" >
-          <SectionTitle action={
-            <Link href="/log" className="text-xs font-medium text-accent-text hover:underline">All activity →</Link>
-          }>
-            Today
-          </SectionTitle>
-          <ActivityList logs={logs} emptyBody="Describe something you did above and it'll show up here." />
-        </Card>
+        {/* --- what have I done --------------------------------------------- */}
+        <div className="enter mt-14" style={{ "--i": 2 } as React.CSSProperties}>
+          {logs.length > 0 ? (
+            <Section
+              title="Today"
+              meta={<span className="tabular">{formatDuration(minutesToday)} · {totals.today.toLocaleString()} XP</span>}
+              action={<Link href="/log" className="hit tap t-meta hover:text-ink">All activity</Link>}
+            >
+              <Timeline entries={logs} timezone={user.timezone} />
+            </Section>
+          ) : (
+            <FirstRun returning={hasHistory} />
+          )}
+        </div>
       </div>
 
-      {/* --- side column --------------------------------------------------- */}
-      <div className="flex flex-col gap-5">
-        <Card className="rise" >
-          <SectionTitle>This week</SectionTitle>
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-3 lg:grid-cols-1 lg:gap-4">
-            <MiniStat label="Week" value={totals.week} />
-            <MiniStat label="Month" value={totals.month} />
-            <MiniStat label="Lifetime" value={totals.lifetime} hint={`${totals.entries} ${totals.entries === 1 ? "entry" : "entries"}`} />
-          </div>
-        </Card>
+      {/* --- how am I doing against myself, and against friends ------------- */}
+      <aside className="enter flex min-w-0 flex-col gap-12 lg:pt-2" style={{ "--i": 3 } as React.CSSProperties}>
+        {hasHistory && (
+          <>
+            <Section title="This week">
+              <WeekBars {...week} />
+            </Section>
 
-        <Card className="rise">
-          <SectionTitle action={
-            <Link href="/groups" className="text-xs font-medium text-accent-text hover:underline">Manage</Link>
-          }>
-            Your groups
-          </SectionTitle>
+            <Section title="You vs yourself">
+              <SelfComparison
+                thisWeek={momentum.thisWeek}
+                lastWeek={momentum.lastWeek}
+                change={momentum.weekChange}
+                daysCompared={momentum.daysCompared}
+              />
+            </Section>
+          </>
+        )}
+
+        <Section
+          title="Groups"
+          action={<Link href="/groups" className="hit tap t-meta hover:text-ink">{groups.length > 0 ? "All" : "Find"}</Link>}
+        >
           {groups.length === 0 ? (
-            <EmptyState
-              icon="🏆"
-              title="No groups yet"
-              body="Create one or join with an invite code to start competing."
-              action={<Link href="/groups" className="btn btn-outline btn-sm mt-3">Find a group</Link>}
-            />
+            <p className="t-secondary text-sm">
+              Nobody to compete with yet.{" "}
+              <Link href="/groups" className="underline underline-offset-2 hover:text-ink">Start a group</Link>.
+            </p>
           ) : (
-            <ul className="flex flex-col gap-1">
-              {groups.map((group, index) => (
-                <li key={group.id} className="rise" style={{ "--i": index } as React.CSSProperties}>
-                  <Link
-                    href={`/groups/${group.id}`}
-                    className="press -mx-2 flex items-center gap-3 rounded-xl px-2 py-2.5 hover:bg-raised"
-                  >
-                    <Glyph icon={group.emoji} size={34} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[0.9375rem] font-medium">{group.name}</p>
-                      <p className="text-xs text-faint">{group.members} {group.members === 1 ? "member" : "members"}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="figure text-lg">#{group.rank}</p>
-                      <p className="label text-[0.5625rem]">this week</p>
-                    </div>
+            <ul>
+              {groups.map((group) => (
+                <li key={group.id}>
+                  <Link href={`/groups/${group.id}`} className="tap flex min-h-11 items-baseline gap-3 py-2">
+                    <span aria-hidden className="text-sm">{group.emoji}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm">{group.name}</span>
+                    <span className="tabular t-figure text-sm">#{group.rank}</span>
                   </Link>
                 </li>
               ))}
             </ul>
           )}
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-function MiniStat({ label, value, hint }: { label: string; value: number; hint?: string }) {
-  return (
-    <div className="lg:flex lg:items-baseline lg:justify-between lg:gap-3">
-      <div className="label lg:mb-0">{label}</div>
-      <div className="figure mt-1.5 text-2xl lg:mt-0">{value.toLocaleString()}</div>
-      {hint && <div className="mt-0.5 text-[0.6875rem] text-faint lg:hidden">{hint}</div>}
-    </div>
-  );
-}
-
-function StreakBadge({ current, atRisk }: { current: number; atRisk: boolean }) {
-  if (current === 0) {
-    return (
-      <div className="shrink-0 rounded-2xl border border-dashed px-4 py-3 text-center">
-        <p className="text-sm font-medium text-muted">No streak</p>
-        <p className="mt-0.5 max-w-[9rem] text-xs text-faint">Earn 10+ XP today to start one</p>
-      </div>
-    );
-  }
-  return (
-    <div
-      className="shrink-0 rounded-2xl px-4 py-3 text-center"
-      style={{ background: "color-mix(in srgb, var(--flame) 12%, transparent)" }}
-    >
-      <div className="flex items-center justify-center gap-1.5">
-        <span className={atRisk ? "" : "flame-live"} aria-hidden>🔥</span>
-        <span className="figure text-2xl" style={{ color: "var(--flame)" }}>{current}</span>
-      </div>
-      <p className="mt-1 text-[0.6875rem] font-medium" style={{ color: "var(--flame)" }}>
-        day{current === 1 ? "" : "s"}
-      </p>
-      <p className="mt-0.5 max-w-[9rem] text-[0.6875rem] text-faint">
-        {atRisk ? "Log today to keep it" : "Safe for today"}
-      </p>
+        </Section>
+      </aside>
     </div>
   );
 }

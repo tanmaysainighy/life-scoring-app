@@ -1,6 +1,6 @@
 import { all, get } from "./db";
 import { ensureSeeded } from "./seed";
-import { localDay, startOfWeek, startOfMonth, addDays } from "./dates";
+import { localDay, startOfWeek, startOfMonth, addDays, daysBetween } from "./dates";
 import { computeStreak, MIN_STREAK_XP, NON_STREAK_CATEGORY } from "./streak";
 import { getLevelProgress } from "./levels";
 import { evaluateAchievements, ACHIEVEMENTS } from "./achievements";
@@ -103,6 +103,74 @@ export async function getDailySeries(userId: string, today: string, days = 14) {
     const day = addDays(from, index);
     return { day, xp: byDay.get(day) ?? 0 };
   });
+}
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/**
+ * Monday–Sunday for the week containing `today`, zero-filled, with the numbers
+ * the UI states in prose: average across days so far and the best day.
+ */
+export async function getWeekBars(userId: string, today: string) {
+  const start = startOfWeek(today);
+  const rows = await all<{ local_day: string; xp: number }>(
+    `SELECT local_day, SUM(xp) AS xp FROM activity_logs
+      WHERE user_id = ? AND local_day >= ? AND local_day <= ?
+      GROUP BY local_day`,
+    userId, start, addDays(start, 6),
+  );
+  const byDay = new Map(rows.map((row) => [row.local_day, row.xp]));
+
+  const days = WEEKDAYS.map((label, index) => {
+    const day = addDays(start, index);
+    return { day, label, xp: byDay.get(day) ?? 0, isToday: day === today, isFuture: day > today };
+  });
+
+  const elapsed = days.filter((d) => !d.isFuture);
+  const best = days.reduce((a, b) => (b.xp > a.xp ? b : a), days[0]);
+  return {
+    days,
+    peak: Math.max(...days.map((d) => d.xp)),
+    average: elapsed.length ? Math.round(elapsed.reduce((sum, d) => sum + d.xp, 0) / elapsed.length) : 0,
+    best: best.xp > 0 ? best : null,
+  };
+}
+
+/**
+ * This week against last week, and today against the trailing 7-day average.
+ *
+ * The week comparison is deliberately like-for-like: this week *so far* against
+ * the same stretch of last week. Comparing three days against a full seven
+ * would show a large drop every Monday morning — technically true, useless as a
+ * signal, and discouraging at exactly the wrong moment.
+ */
+export async function getMomentum(userId: string, today: string) {
+  const thisWeekStart = startOfWeek(today);
+  const lastWeekStart = addDays(thisWeekStart, -7);
+  const elapsed = daysBetween(thisWeekStart, today);        // 0 on Monday
+  const lastWeekSamePoint = addDays(lastWeekStart, elapsed);
+
+  const row = await get<{ this_week: number; last_week: number; trailing: number }>(
+    `SELECT
+       COALESCE(SUM(CASE WHEN local_day >= ? THEN xp END), 0)                   AS this_week,
+       COALESCE(SUM(CASE WHEN local_day >= ? AND local_day <= ? THEN xp END), 0) AS last_week,
+       COALESCE(SUM(CASE WHEN local_day >= ? AND local_day < ? THEN xp END), 0)  AS trailing
+     FROM activity_logs WHERE user_id = ?`,
+    thisWeekStart, lastWeekStart, lastWeekSamePoint, addDays(today, -7), today, userId,
+  );
+
+  const thisWeek = row?.this_week ?? 0;
+  const lastWeek = row?.last_week ?? 0;
+
+  return {
+    thisWeek,
+    lastWeek,
+    // A percentage needs a real baseline; inventing one from a zero week lies.
+    weekChange: lastWeek > 0 ? Math.round(((thisWeek - lastWeek) / lastWeek) * 100) : null,
+    dailyAverage: Math.round((row?.trailing ?? 0) / 7),
+    // How much of the week each side covers, so the UI can say so plainly.
+    daysCompared: elapsed + 1,
+  };
 }
 
 export function getCategoryBreakdown(userId: string, since?: string) {
@@ -238,14 +306,19 @@ export async function getDashboard(user: SessionUser) {
   await ensureSeeded();
   const today = localDay(new Date(), user.timezone);
 
-  const [totals, streak, logs, groups] = await Promise.all([
+  const [totals, streak, logs, groups, week, momentum] = await Promise.all([
     getTotals(user.id, today),
     getStreak(user.id, today),
     getLogsForDay(user.id, today),
     getUserGroups(user.id, today),
+    getWeekBars(user.id, today),
+    getMomentum(user.id, today),
   ]);
 
-  return { today, totals, streak, level: getLevelProgress(totals.lifetime), logs, groups };
+  return {
+    today, totals, streak, logs, groups, week, momentum,
+    level: getLevelProgress(totals.lifetime),
+  };
 }
 
 export async function getProfile(user: SessionUser) {

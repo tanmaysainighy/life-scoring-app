@@ -41,14 +41,14 @@ export function GroupActions() {
   }
 
   return (
-    <div className="card p-5">
+    <div className="">
       <div className="mb-4 inline-flex rounded-lg border p-0.5">
         {(["create", "join"] as const).map((value) => (
           <button
             key={value}
             onClick={() => { setTab(value); setError(null); }}
             className={`rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
-              tab === value ? "bg-accent-soft text-accent-text" : "text-muted hover:text-ink"
+              tab === value ? "border-b border-current" : "text-muted hover:text-ink"
             }`}
           >
             {value === "create" ? "Create group" : "Join with code"}
@@ -82,7 +82,7 @@ export function GroupActions() {
             <input
               id="invite-code" value={code} required
               onChange={(event) => setCode(event.target.value.toUpperCase())}
-              placeholder="A1B2C3D4" className="field mt-1 font-mono tracking-widest"
+              placeholder="A1B2C3D4" className="field mt-1 tracking-widest"
             />
           </div>
         )}
@@ -109,13 +109,13 @@ export function LeaveGroup({ groupId }: { groupId: string }) {
   }
 
   if (!confirming) {
-    return <button onClick={() => setConfirming(true)} className="btn btn-ghost text-xs">Leave group</button>;
+    return <button onClick={() => setConfirming(true)} className="hit btn btn-bare btn-sm">Leave group</button>;
   }
   return (
     <span className="flex items-center gap-2 text-xs">
       <span className="text-muted">Sure?</span>
-      <button onClick={leave} disabled={busy} className="btn btn-outline px-2 py-1 text-xs">Leave</button>
-      <button onClick={() => setConfirming(false)} className="btn btn-ghost px-2 py-1 text-xs">Cancel</button>
+      <button onClick={leave} disabled={busy} className="hit btn btn-quiet btn-sm">Leave</button>
+      <button onClick={() => setConfirming(false)} className="hit btn btn-bare btn-sm">Cancel</button>
     </span>
   );
 }

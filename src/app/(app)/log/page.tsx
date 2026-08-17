@@ -1,10 +1,11 @@
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getRecentLogs } from "@/lib/queries";
-import { ActivityList } from "@/components/ActivityList";
-import { Card } from "@/components/ui";
+import { Timeline } from "@/components/Timeline";
+import { Section } from "@/components/Section";
 import { formatDuration } from "@/lib/duration";
 
-export const metadata = { title: "Activity log · LifeScore" };
+export const metadata = { title: "History · LifeScore" };
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 50;
@@ -16,7 +17,7 @@ export default async function LogPage({
   const page = Math.max(1, Number((await searchParams).page) || 1);
   const logs = await getRecentLogs(user.id, PAGE_SIZE, (page - 1) * PAGE_SIZE);
 
-  // Group by the day the user actually lived, newest first.
+  // Grouped by the day the user actually lived, newest first.
   const days = new Map<string, typeof logs>();
   for (const log of logs) {
     const existing = days.get(log.local_day);
@@ -25,33 +26,40 @@ export default async function LogPage({
   }
 
   return (
-    <div className="space-y-5">
-      <h1 className="text-2xl font-semibold tracking-tight">Activity log</h1>
+    <div className="mx-auto max-w-2xl">
+      <h1 className="t-heading enter">History</h1>
 
       {days.size === 0 && (
-        <Card><p className="py-6 text-center text-sm text-muted">Nothing logged yet.</p></Card>
+        <p className="t-secondary enter mt-8 text-[0.9375rem]">
+          Nothing here yet. <Link href="/" className="underline underline-offset-2 hover:text-ink">Log something</Link>.
+        </p>
       )}
 
-      {[...days].map(([day, dayLogs]) => {
-        const xp = dayLogs.reduce((sum, log) => sum + log.xp, 0);
-        const minutes = dayLogs.reduce((sum, log) => sum + log.duration_minutes, 0);
-        return (
-          <Card key={day}>
-            <div className="mb-3 flex items-baseline justify-between gap-3">
-              <h2 className="text-sm font-semibold">{formatDay(day)}</h2>
-              <p className="tabular text-xs text-faint">{formatDuration(minutes)} · <span className="font-semibold text-accent-text">+{xp} XP</span></p>
+      <div className="mt-10 flex flex-col gap-12">
+        {[...days].map(([day, dayLogs], index) => {
+          const xp = dayLogs.reduce((sum, log) => sum + log.xp, 0);
+          const minutes = dayLogs.reduce((sum, log) => sum + log.duration_minutes, 0);
+          return (
+            <div key={day} className="enter" style={{ "--i": index } as React.CSSProperties}>
+              <Section
+                title={formatDay(day)}
+                meta={<span className="tabular">{formatDuration(minutes)} · {xp.toLocaleString()} XP</span>}
+              >
+                <Timeline entries={dayLogs} timezone={user.timezone} />
+              </Section>
             </div>
-            <ActivityList logs={dayLogs} emptyBody="" />
-          </Card>
-        );
-      })}
+          );
+        })}
+      </div>
 
       {(page > 1 || logs.length === PAGE_SIZE) && (
-        <div className="flex justify-between">
+        <div className="rule-t mt-14 flex justify-between pt-5">
           {page > 1
-            ? <a href={`/log?page=${page - 1}`} className="btn btn-outline">Newer</a>
+            ? <Link href={`/log?page=${page - 1}`} className="btn btn-quiet btn-sm">Newer</Link>
             : <span />}
-          {logs.length === PAGE_SIZE && <a href={`/log?page=${page + 1}`} className="btn btn-outline">Older</a>}
+          {logs.length === PAGE_SIZE && (
+            <Link href={`/log?page=${page + 1}`} className="btn btn-quiet btn-sm">Older</Link>
+          )}
         </div>
       )}
     </div>

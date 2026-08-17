@@ -23,7 +23,7 @@ export function ThemeToggle() {
   }
 
   return (
-    <button onClick={toggle} className="btn btn-ghost px-2" aria-label="Toggle colour theme">
+    <button onClick={toggle} className="btn btn-bare" aria-label="Toggle colour theme">
       <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden
         fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
         <circle cx="12" cy="12" r="4.2" />

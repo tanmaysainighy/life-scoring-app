@@ -1,32 +1,36 @@
 import type { ReactNode } from "react";
-import { Logo } from "./Logo";
 
-/** Centred card used by sign-in and sign-up, with a short explainer beside it. */
+/**
+ * Sign-in and sign-up.
+ *
+ * The left side is the whole pitch in four lines — the brief is that someone
+ * should understand the product in seconds, and a paragraph of marketing copy
+ * would take longer than the loop it describes.
+ */
 export function AuthShell({
   title, subtitle, children,
 }: { title: string; subtitle: string; children: ReactNode }) {
   return (
-    <main className="mx-auto flex min-h-dvh max-w-5xl flex-col items-center justify-center gap-10 px-5 py-10 lg:flex-row lg:gap-20">
-      <div className="w-full max-w-sm lg:max-w-md">
-        <Logo />
-        <h1 className="mt-6 text-3xl font-semibold tracking-tight">
-          Say what you did.<br />Get a fair score.
+    <main className="mx-auto flex min-h-dvh max-w-4xl flex-col justify-center gap-16 px-6 py-16 lg:flex-row lg:items-center lg:gap-24">
+      <div className="max-w-sm">
+        <p className="t-figure text-[0.9375rem] tracking-[-0.02em]">LifeScore</p>
+
+        <h1 className="t-heading mt-10 text-[1.75rem] leading-[1.25] sm:text-[2rem]">
+          Tell it what you did.
         </h1>
-        <p className="mt-3 text-[0.9375rem] leading-relaxed text-muted">
-          Write it in plain language — <em>“worked on my AI agent for 4 hours”</em> — and LifeScore turns
-          it into XP using the same rules for everyone. Build a streak, level up, and see where you land
-          against your friends.
-        </p>
-        <ul className="mt-6 space-y-2 text-sm text-muted">
-          <li className="flex gap-2"><span aria-hidden>⚖️</span> Same activity, same score — for every user</li>
-          <li className="flex gap-2"><span aria-hidden>🔥</span> Daily streaks that reset honestly</li>
-          <li className="flex gap-2"><span aria-hidden>🏆</span> Group leaderboards, calculated server-side</li>
-        </ul>
+
+        <div className="t-secondary mt-5 flex flex-col gap-1 text-[1.0625rem] leading-relaxed">
+          <p>It works out what that was.</p>
+          <p>It scores it — same rules for everyone.</p>
+          <p>You compete with yourself, and your friends.</p>
+        </div>
+
+        <p className="t-meta mt-8">That&rsquo;s it.</p>
       </div>
 
-      <div className="card w-full max-w-sm p-6">
-        <h2 className="text-lg font-semibold">{title}</h2>
-        <p className="mb-5 mt-0.5 text-sm text-muted">{subtitle}</p>
+      <div className="w-full max-w-xs">
+        <h2 className="t-section">{title}</h2>
+        <p className="t-secondary mb-8 mt-2 text-sm">{subtitle}</p>
         {children}
       </div>
     </main>
