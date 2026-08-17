@@ -1,4 +1,4 @@
-import { get } from "@/lib/db";
+import { get, run } from "@/lib/db";
 import { ensureSeeded } from "@/lib/seed";
 
 /**
@@ -14,6 +14,11 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     await ensureSeeded();
+    // Sessions are only cleared when their owner returns, so ones that are
+    // simply abandoned would accumulate forever. The health probe is the
+    // natural place to sweep them: it already runs on a schedule.
+    await run(`DELETE FROM sessions WHERE expires_at < ?`, new Date().toISOString());
+
     const activities = (await get<{ n: number }>(`SELECT COUNT(*) AS n FROM activities`))?.n ?? 0;
     if (activities === 0) {
       return Response.json({ status: "degraded", reason: "taxonomy not seeded" }, { status: 503 });

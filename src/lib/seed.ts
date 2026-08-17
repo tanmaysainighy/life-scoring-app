@@ -24,6 +24,10 @@ export async function nextActivityId(): Promise<string> {
   return `ACT_${String((await highestActivityNumber()) + 1).padStart(5, "0")}`;
 }
 
+/** `(?, ?)` × n, comma separated — one VALUES list for a multi-row insert. */
+const repeat = (template: string, count: number) =>
+  Array.from({ length: count }, () => template).join(", ");
+
 /**
  * Loads the canonical taxonomy into the database. Idempotent: activities are
  * keyed by slug, so running it again refreshes names/keywords without creating
@@ -31,6 +35,7 @@ export async function nextActivityId(): Promise<string> {
  */
 export async function seedTaxonomy(): Promise<void> {
   const rows = flattenTaxonomy();
+  if (rows.length === 0) return;
   const now = new Date().toISOString();
 
   // Keep the id an activity already has; only genuinely new slugs get a new one.
@@ -43,41 +48,47 @@ export async function seedTaxonomy(): Promise<void> {
     idFor.set(row.slug, existing.get(row.slug) ?? `ACT_${String(++counter).padStart(5, "0")}`);
   }
 
-  await transaction(async () => {
-    for (const row of rows) {
-      const id = idFor.get(row.slug)!;
-      const parentId = row.parentSlug ? idFor.get(row.parentSlug)! : null;
-
-      await run(
-        `INSERT INTO activities
-           (id, name, slug, parent_id, category, base_xp_per_hour, icon, description,
-            keywords, status, scoring_version, origin, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, 'active', ?, 'seed', ?, ?)
-         ON CONFLICT (slug) DO UPDATE SET
-           name = excluded.name,
-           parent_id = excluded.parent_id,
-           category = excluded.category,
-           base_xp_per_hour = excluded.base_xp_per_hour,
-           icon = excluded.icon,
-           keywords = excluded.keywords,
-           scoring_version = excluded.scoring_version,
-           updated_at = excluded.updated_at`,
-        id, row.name, row.slug, parentId, row.category, row.xp, row.icon,
-        row.keywords, CURRENT_SCORING_VERSION, now, now,
-      );
-
-      // The activity's own name is always an alias, plus any declared synonyms.
-      for (const alias of [row.name, row.slug.replace(/-/g, " "), ...row.aliases]) {
-        const key = normalize(alias);
-        if (!key) continue;
-        await run(
-          `INSERT INTO activity_aliases (alias, activity_id, source, created_at)
-           VALUES (?, ?, 'seed', ?)
-           ON CONFLICT (alias) DO NOTHING`,
-          key, id, now,
-        );
-      }
+  // The activity's own name is always an alias, plus any declared synonyms.
+  const aliasPairs = new Map<string, string>();
+  for (const row of rows) {
+    for (const alias of [row.name, row.slug.replace(/-/g, " "), ...row.aliases]) {
+      const key = normalize(alias);
+      if (key && !aliasPairs.has(key)) aliasPairs.set(key, idFor.get(row.slug)!);
     }
+  }
+
+  // Two statements rather than ~550. Inserting row by row costs a network
+  // round trip each, which on hosted Postgres turned every boot into a
+  // multi-second stall — this runs on every start, not just an empty database.
+  await transaction(async () => {
+    await run(
+      `INSERT INTO activities
+         (id, name, slug, parent_id, category, base_xp_per_hour, icon, description,
+          keywords, status, scoring_version, origin, created_at, updated_at)
+       VALUES ${repeat("(?, ?, ?, ?, ?, ?, ?, '', ?, 'active', ?, 'seed', ?, ?)", rows.length)}
+       ON CONFLICT (slug) DO UPDATE SET
+         name = excluded.name,
+         parent_id = excluded.parent_id,
+         category = excluded.category,
+         base_xp_per_hour = excluded.base_xp_per_hour,
+         icon = excluded.icon,
+         keywords = excluded.keywords,
+         scoring_version = excluded.scoring_version,
+         updated_at = excluded.updated_at`,
+      ...rows.flatMap((row) => [
+        idFor.get(row.slug)!, row.name, row.slug,
+        row.parentSlug ? idFor.get(row.parentSlug)! : null,
+        row.category, row.xp, row.icon, row.keywords,
+        CURRENT_SCORING_VERSION, now, now,
+      ]),
+    );
+
+    await run(
+      `INSERT INTO activity_aliases (alias, activity_id, source, created_at)
+       VALUES ${repeat("(?, ?, 'seed', ?)", aliasPairs.size)}
+       ON CONFLICT (alias) DO NOTHING`,
+      ...[...aliasPairs].flatMap(([alias, id]) => [alias, id, now]),
+    );
   });
 }
 

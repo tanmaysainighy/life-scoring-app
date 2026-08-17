@@ -255,6 +255,45 @@ describe("activities the taxonomy doesn't know", () => {
   });
 });
 
+describe("transactions", () => {
+  test("a throw rolls the whole block back", async () => {
+    const before = (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM groups`))!.n;
+
+    await assert.rejects(
+      db.transaction(async () => {
+        await db.run(
+          `INSERT INTO groups (id, name, slug, description, invite_code, owner_id, emoji, created_at)
+           VALUES ('GRP_rollback', 'Rollback', 'rollback', '', 'ROLLBACK', ?, '🧪', ?)`,
+          TANMAY.id, new Date().toISOString(),
+        );
+        // Visible inside the transaction...
+        assert.ok(await db.get(`SELECT 1 FROM groups WHERE id = 'GRP_rollback'`));
+        throw new Error("boom");
+      }),
+      /boom/,
+    );
+
+    // ...and gone once it unwinds.
+    assert.equal(await db.get(`SELECT 1 FROM groups WHERE id = 'GRP_rollback'`), undefined);
+    assert.equal((await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM groups`))!.n, before);
+  });
+
+  test("the connection is usable again after a rollback", async () => {
+    const activities = (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM activities`))!.n;
+    assert.ok(activities > 0, "a failed transaction must not poison later queries");
+  });
+
+  test("a nested transaction joins the outer one rather than nesting BEGIN", async () => {
+    await db.transaction(async () => {
+      await db.transaction(async () => {
+        await db.run(`INSERT INTO proposed_activities (id, raw_text, suggested_name, status, created_at)
+                      VALUES ('PROP_nested', 'x', 'Nested', 'pending', ?)`, new Date().toISOString());
+      });
+    });
+    assert.ok(await db.get(`SELECT 1 FROM proposed_activities WHERE id = 'PROP_nested'`));
+  });
+});
+
 describe("re-seeding an existing database", () => {
   test("is idempotent, keeps activity ids stable, and leaves history intact", async () => {
     const { seedTaxonomy } = await import("../src/lib/seed.ts");
