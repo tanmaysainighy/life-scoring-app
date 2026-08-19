@@ -1,7 +1,7 @@
 import { all, get, run, transaction } from "./db";
 import {
   getActivity, rankCandidates, resolveDeterministic, rememberPhrase,
-  deriveActivity, proposeActivity, listActivities,
+  deriveActivity, listActivities,
   type Activity, type ResolutionMethod,
 } from "./resolver";
 import { classifyActivity, LLM_AVAILABLE } from "./llm";
@@ -132,11 +132,12 @@ export async function analyzeEntry(userId: string, rawText: string): Promise<Ana
       return present(derived, duration, Math.min(classification.confidence, 0.85), "llm",
         `This is a new activity for LifeScore. It's scored at ${derived.base_xp_per_hour} XP/h, in line with similar activities.`);
     }
-    await proposeActivity(text, classification.proposed_activity_name, classification.proposed_parent_id, userId);
+    // No confident way to price it, and nothing here reviews a queue — so say
+    // that plainly rather than promising a review that never happens.
     return {
       status: "clarify",
       durationMinutes: duration,
-      message: `I don't have a fair way to score "${classification.proposed_activity_name}" yet, so I've sent it for review. Pick the closest activity for now.`,
+      message: `I can't score "${classification.proposed_activity_name}" fairly yet. Pick the closest activity and I'll remember it for next time.`,
     };
   }
 

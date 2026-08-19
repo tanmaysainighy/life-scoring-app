@@ -55,9 +55,9 @@ for (const activity of oldActivities) {
 
   await run(
     `INSERT INTO activities
-       (id, name, slug, parent_id, category, base_xp_per_hour, icon, description,
+       (id, name, slug, parent_id, category, base_xp_per_hour, icon,
         keywords, status, scoring_version, origin, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, 'active', ?, 'derived', ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, 'derived', ?, ?)
      ON CONFLICT (slug) DO NOTHING`,
     id, activity.name, activity.slug, parentId, activity.category,
     activity.base_xp_per_hour, activity.icon, activity.keywords,
@@ -79,10 +79,10 @@ for (const activity of oldActivities) {
 let users = 0;
 for (const user of read<Record<string, string | number>>(`SELECT * FROM users`)) {
   await run(
-    `INSERT INTO users (id, email, name, password_hash, avatar_hue, timezone, is_admin, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING`,
-    user.id, user.email, user.name, user.password_hash, user.avatar_hue,
-    user.timezone, user.is_admin, user.created_at, user.updated_at,
+    `INSERT INTO users (id, email, name, password_hash, timezone, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING`,
+    user.id, user.email, user.name, user.password_hash,
+    user.timezone, user.created_at, user.updated_at,
   );
   users += 1;
 }

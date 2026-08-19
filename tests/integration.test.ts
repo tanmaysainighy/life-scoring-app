@@ -36,8 +36,8 @@ before(async () => {
   const now = new Date().toISOString();
   for (const [id, name] of [[TANMAY.id, "Tanmay"], [ARYAN.id, "Aryan"]]) {
     await db.run(
-      `INSERT INTO users (id, email, name, password_hash, avatar_hue, timezone, is_admin, created_at, updated_at)
-       VALUES (?, ?, ?, 'x', 200, 'UTC', 0, ?, ?)`,
+      `INSERT INTO users (id, email, name, password_hash, timezone, created_at, updated_at)
+       VALUES (?, ?, ?, 'x', 'UTC', ?, ?)`,
       id, `${name.toLowerCase()}@test.dev`, name, now, now,
     );
   }
@@ -284,13 +284,15 @@ describe("transactions", () => {
   });
 
   test("a nested transaction joins the outer one rather than nesting BEGIN", async () => {
+    const now = new Date().toISOString();
     await db.transaction(async () => {
       await db.transaction(async () => {
-        await db.run(`INSERT INTO proposed_activities (id, raw_text, suggested_name, status, created_at)
-                      VALUES ('PROP_nested', 'x', 'Nested', 'pending', ?)`, new Date().toISOString());
+        await db.run(
+          `INSERT INTO users (id, email, name, password_hash, timezone, created_at, updated_at)
+           VALUES ('USR_nested', 'nested@test.dev', 'Nested', 'x', 'UTC', ?, ?)`, now, now);
       });
     });
-    assert.ok(await db.get(`SELECT 1 FROM proposed_activities WHERE id = 'PROP_nested'`));
+    assert.ok(await db.get(`SELECT 1 FROM users WHERE id = 'USR_nested'`));
   });
 });
 
@@ -330,8 +332,8 @@ describe("rest and leisure", () => {
   before(async () => {
     const now = new Date().toISOString();
     await db.run(
-      `INSERT INTO users (id, email, name, password_hash, avatar_hue, timezone, is_admin, created_at, updated_at)
-       VALUES (?, 'sleeper@test.dev', 'Sleeper', 'x', 100, 'UTC', 0, ?, ?)`,
+      `INSERT INTO users (id, email, name, password_hash, timezone, created_at, updated_at)
+       VALUES (?, 'sleeper@test.dev', 'Sleeper', 'x', 'UTC', ?, ?)`,
       SLEEPER.id, now, now,
     );
   });

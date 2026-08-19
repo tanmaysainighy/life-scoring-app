@@ -12,7 +12,7 @@ import { cached } from "./cache";
  */
 
 export type SessionUser = {
-  id: string; name: string; email: string; avatar_hue: number; timezone: string; is_admin: number;
+  id: string; name: string; email: string; timezone: string;
 };
 
 export type LogRow = {
@@ -88,21 +88,6 @@ export function getRecentLogs(userId: string, limit = 50, offset = 0): Promise<L
     `${LOG_SELECT} WHERE l.user_id = ? ORDER BY l.created_at DESC LIMIT ? OFFSET ?`,
     userId, limit, offset,
   );
-}
-
-/** XP per day for the last `days` days, zero-filled for the chart. */
-export async function getDailySeries(userId: string, today: string, days = 14) {
-  const from = addDays(today, -(days - 1));
-  const rows = await all<{ local_day: string; xp: number }>(
-    `SELECT local_day, SUM(xp) AS xp FROM activity_logs
-      WHERE user_id = ? AND local_day >= ? GROUP BY local_day`,
-    userId, from,
-  );
-  const byDay = new Map(rows.map((row) => [row.local_day, row.xp]));
-  return Array.from({ length: days }, (_, index) => {
-    const day = addDays(from, index);
-    return { day, xp: byDay.get(day) ?? 0 };
-  });
 }
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -240,7 +225,7 @@ function periodStart(period: LeaderboardPeriod, today: string): string {
 }
 
 export type LeaderboardRow = {
-  user_id: string; name: string; avatar_hue: number; xp: number; entries: number;
+  user_id: string; name: string; xp: number; entries: number;
 };
 
 /**
@@ -252,14 +237,14 @@ export function getGroupLeaderboard(
 ): Promise<LeaderboardRow[]> {
   return cached(`lb:${groupId}:${period}:${today}`, 15_000, () =>
     all<LeaderboardRow>(
-      `SELECT u.id AS user_id, u.name, u.avatar_hue,
+      `SELECT u.id AS user_id, u.name,
               COALESCE(SUM(l.xp), 0) AS xp,
               COUNT(l.id) AS entries
          FROM group_members gm
          JOIN users u ON u.id = gm.user_id
          LEFT JOIN activity_logs l ON l.user_id = gm.user_id AND l.local_day >= ?
         WHERE gm.group_id = ?
-        GROUP BY u.id, u.name, u.avatar_hue
+        GROUP BY u.id, u.name
         ORDER BY xp DESC, u.name ASC
         LIMIT 100`,
       periodStart(period, today), groupId,
@@ -307,10 +292,9 @@ export async function getProfile(user: SessionUser) {
   await ensureSeeded();
   const today = localDay(new Date(), user.timezone);
 
-  const [totals, streak, series, categories, topActivities, groups] = await Promise.all([
+  const [totals, streak, categories, topActivities, groups] = await Promise.all([
     getTotals(user.id, today),
     getStreak(user.id, today),
-    getDailySeries(user.id, today, 14),
     getCategoryBreakdown(user.id),
     getTopActivities(user.id),
     getUserGroups(user.id, today),
@@ -328,7 +312,7 @@ export async function getProfile(user: SessionUser) {
   const earnedIds = new Set(earned.map((achievement) => achievement.id));
 
   return {
-    today, totals, streak, level, series, categories, topActivities, groups,
+    today, totals, streak, level, categories, topActivities, groups,
     achievements: ACHIEVEMENTS.map(({ earned: _earned, ...rest }) => ({
       ...rest, unlocked: earnedIds.has(rest.id),
     })),

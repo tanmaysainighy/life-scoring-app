@@ -63,9 +63,9 @@ export async function seedTaxonomy(): Promise<void> {
   await transaction(async () => {
     await run(
       `INSERT INTO activities
-         (id, name, slug, parent_id, category, base_xp_per_hour, icon, description,
+         (id, name, slug, parent_id, category, base_xp_per_hour, icon,
           keywords, status, scoring_version, origin, created_at, updated_at)
-       VALUES ${repeat("(?, ?, ?, ?, ?, ?, ?, '', ?, 'active', ?, 'seed', ?, ?)", rows.length)}
+       VALUES ${repeat("(?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, 'seed', ?, ?)", rows.length)}
        ON CONFLICT (slug) DO UPDATE SET
          name = excluded.name,
          parent_id = excluded.parent_id,

@@ -13,9 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
   email         TEXT NOT NULL UNIQUE,
   name          TEXT NOT NULL,
   password_hash TEXT NOT NULL,
-  avatar_hue    INTEGER NOT NULL DEFAULT 250,
   timezone      TEXT NOT NULL DEFAULT 'UTC',
-  is_admin      INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL
 );
@@ -39,9 +37,7 @@ CREATE TABLE IF NOT EXISTS activities (
   parent_id        TEXT REFERENCES activities(id) ON DELETE SET NULL,
   category         TEXT NOT NULL,             -- top-level category slug
   base_xp_per_hour DOUBLE PRECISION NOT NULL,
-  unit             TEXT NOT NULL DEFAULT 'hour',
   icon             TEXT NOT NULL DEFAULT '✨',
-  description      TEXT NOT NULL DEFAULT '',
   keywords         TEXT NOT NULL DEFAULT '',  -- space-separated, for matching
   status           TEXT NOT NULL DEFAULT 'active',  -- active | disabled
   scoring_version  INTEGER NOT NULL DEFAULT 1,
@@ -126,15 +122,3 @@ CREATE INDEX IF NOT EXISTS idx_gm_group ON group_members(group_id);
 
 -- Achievements are derived from the stats the profile already computes (see
 -- achievements.ts), so there is no table for them — nothing to keep in sync.
-
--- Activities the resolver wanted but couldn't confidently place. Reviewed by an
--- admin; nothing is scored from this table.
-CREATE TABLE IF NOT EXISTS proposed_activities (
-  id          TEXT PRIMARY KEY,
-  raw_text    TEXT NOT NULL,
-  suggested_name TEXT NOT NULL,
-  parent_id   TEXT REFERENCES activities(id) ON DELETE SET NULL,
-  user_id     TEXT REFERENCES users(id) ON DELETE SET NULL,
-  status      TEXT NOT NULL DEFAULT 'pending',
-  created_at  TEXT NOT NULL
-);

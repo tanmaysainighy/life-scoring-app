@@ -152,14 +152,6 @@ body {
 .rule-t { border-top: 1px solid var(--rule); }
 .rule-b { border-bottom: 1px solid var(--rule); }
 
-/* The one place a raised surface is justified: transient overlays. */
-.sheet {
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 14px;
-  box-shadow: 0 20px 50px -24px rgb(0 0 0 / .3);
-}
-
 /* --- controls ------------------------------------------------------------ */
 
 .btn {

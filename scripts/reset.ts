@@ -36,7 +36,6 @@ await transaction(async () => {
     "user_activity_memory",
     "activity_logs",
     "user_achievements",
-    "proposed_activities",
     "group_members",
     "groups",
     "sessions",

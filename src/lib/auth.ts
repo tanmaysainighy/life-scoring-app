@@ -45,21 +45,19 @@ export async function createUser(input: {
 
   const id = `USR_${randomUUID()}`;
   const now = new Date().toISOString();
-  // Stable per-user accent colour derived from the id.
-  const hue = [...id].reduce((acc, char) => (acc * 31 + char.charCodeAt(0)) % 360, 7);
 
   await run(
-    `INSERT INTO users (id, email, name, password_hash, avatar_hue, timezone, is_admin, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-    id, email, name, hashPassword(input.password), hue, input.timezone || "UTC", now, now,
+    `INSERT INTO users (id, email, name, password_hash, timezone, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    id, email, name, hashPassword(input.password), input.timezone || "UTC", now, now,
   );
 
-  return { id, email, name, avatar_hue: hue, timezone: input.timezone || "UTC", is_admin: 0 };
+  return { id, email, name, timezone: input.timezone || "UTC" };
 }
 
 export async function authenticate(email: string, password: string): Promise<SessionUser | AuthError> {
   const user = await get<SessionUser & { password_hash: string }>(
-    `SELECT id, email, name, avatar_hue, timezone, is_admin, password_hash
+    `SELECT id, email, name, timezone, password_hash
        FROM users WHERE email = ?`,
     email.trim().toLowerCase(),
   );
@@ -103,7 +101,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   if (!token) return null;
 
   const user = await get<SessionUser & { expires_at: string }>(
-    `SELECT u.id, u.email, u.name, u.avatar_hue, u.timezone, u.is_admin, s.expires_at
+    `SELECT u.id, u.email, u.name, u.timezone, s.expires_at
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.id = ?`,
     token,

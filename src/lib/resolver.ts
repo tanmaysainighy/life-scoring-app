@@ -365,9 +365,9 @@ export async function deriveActivity(
 
   await run(
     `INSERT INTO activities
-       (id, name, slug, parent_id, category, base_xp_per_hour, icon, description,
+       (id, name, slug, parent_id, category, base_xp_per_hour, icon,
         keywords, status, scoring_version, origin, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, 'active', ?, 'derived', ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, 'derived', ?, ?)`,
     id, name, slug, parentId, parent.category, rate, parent.icon,
     normalize(name), parent.scoring_version, now, now,
   );
@@ -379,16 +379,4 @@ export async function deriveActivity(
 
   invalidateTaxonomyCache();
   return (await getActivity(id)) ?? null;
-}
-
-/** Files an activity we couldn't confidently place. Nothing is scored from it. */
-export async function proposeActivity(
-  rawText: string, name: string, parentId: string | null, userId: string,
-): Promise<void> {
-  await run(
-    `INSERT INTO proposed_activities (id, raw_text, suggested_name, parent_id, user_id, status, created_at)
-     VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
-    `PROP_${crypto.randomUUID().slice(0, 8)}`, rawText.slice(0, 500), name.slice(0, 100),
-    parentId, userId, new Date().toISOString(),
-  );
 }
