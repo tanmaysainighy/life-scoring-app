@@ -45,9 +45,6 @@ CREATE TABLE IF NOT EXISTS activities (
   created_at       TEXT NOT NULL,
   updated_at       TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_activities_parent   ON activities(parent_id);
-CREATE INDEX IF NOT EXISTS idx_activities_category ON activities(category);
-CREATE INDEX IF NOT EXISTS idx_activities_status   ON activities(status);
 
 -- Alternate names that map onto a canonical activity. The cheapest hit in the
 -- resolver cascade after an exact slug/name match.
@@ -57,7 +54,6 @@ CREATE TABLE IF NOT EXISTS activity_aliases (
   source      TEXT NOT NULL DEFAULT 'seed',   -- seed | llm | admin
   created_at  TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_aliases_activity ON activity_aliases(activity_id);
 
 -- Per-user phrasing memory. Improves classification only; never affects XP.
 CREATE TABLE IF NOT EXISTS user_activity_memory (
@@ -68,7 +64,6 @@ CREATE TABLE IF NOT EXISTS user_activity_memory (
   last_used   TEXT NOT NULL,
   PRIMARY KEY (user_id, phrase)
 );
-CREATE INDEX IF NOT EXISTS idx_memory_user ON user_activity_memory(user_id);
 
 -- ---------------------------------------------------------------------------
 -- Activity logs: the actual scored entries. XP is written by the server only.
@@ -92,9 +87,7 @@ CREATE TABLE IF NOT EXISTS activity_logs (
 );
 -- Leaderboards and dashboards are all (user, day) range scans.
 CREATE INDEX IF NOT EXISTS idx_logs_user_day    ON activity_logs(user_id, local_day);
-CREATE INDEX IF NOT EXISTS idx_logs_day         ON activity_logs(local_day);
 CREATE INDEX IF NOT EXISTS idx_logs_user_created ON activity_logs(user_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_logs_activity    ON activity_logs(activity_id);
 
 -- ---------------------------------------------------------------------------
 -- Groups
@@ -118,7 +111,26 @@ CREATE TABLE IF NOT EXISTS group_members (
   PRIMARY KEY (group_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_gm_user  ON group_members(user_id);
-CREATE INDEX IF NOT EXISTS idx_gm_group ON group_members(group_id);
 
 -- Achievements are derived from the stats the profile already computes (see
 -- achievements.ts), so there is no table for them — nothing to keep in sync.
+
+-- Indexes carried by earlier versions that no query uses. Postgres cannot
+-- express "create only these", and the schema runs on every boot, so dropping
+-- them explicitly is what actually removes them from an existing database.
+--
+-- Why each went:
+--   activities.*      111 rows, fully cached in memory; a scan beats a seek
+--   aliases_activity  read once per process as a hash join
+--   memory_user       redundant: user_id already leads the primary key
+--   gm_group          redundant: group_id already leads the primary key
+--   logs_day          only the global leaderboard scanned by day, and it is gone
+--   logs_activity     nothing queries logs by activity, and it cost every insert
+DROP INDEX IF EXISTS idx_activities_parent;
+DROP INDEX IF EXISTS idx_activities_category;
+DROP INDEX IF EXISTS idx_activities_status;
+DROP INDEX IF EXISTS idx_aliases_activity;
+DROP INDEX IF EXISTS idx_memory_user;
+DROP INDEX IF EXISTS idx_gm_group;
+DROP INDEX IF EXISTS idx_logs_day;
+DROP INDEX IF EXISTS idx_logs_activity;

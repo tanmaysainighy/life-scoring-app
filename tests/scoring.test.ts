@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { scoreActivity, explainScore, deriveXpRate, MIN_XP_RATE, MAX_XP_RATE } from "../src/lib/scoring.ts";
-import { getLevelFromXP, getXPForNextLevel, getLevelProgress } from "../src/lib/levels.ts";
+import { getLevelFromXP, getLevelProgress } from "../src/lib/levels.ts";
 
 describe("scoring engine", () => {
   test("rate × hours, the documented examples", () => {
@@ -77,11 +77,18 @@ describe("levels", () => {
     assert.equal(getLevelFromXP(800), 5);
   });
 
-  test("thresholds increase monotonically", () => {
-    for (let level = 1; level < 40; level++) {
-      const next = getXPForNextLevel(level);
-      assert.ok(next !== null && next > getLevelFromXP(next) * 0);
-      assert.ok(getLevelFromXP(next) === level + 1);
+  test("crossing a threshold always advances exactly one level", () => {
+    // Walked through the public surface rather than the private threshold
+    // table, so the curve can be retuned without rewriting the test.
+    let previousFloor = -1;
+    for (let xp = 0; xp <= 60_000; xp += 97) {
+      const progress = getLevelProgress(xp);
+      assert.ok(progress.levelFloor >= previousFloor, "floors must not go backwards");
+      previousFloor = progress.levelFloor;
+      if (progress.nextLevelAt === null) continue;
+
+      assert.equal(getLevelFromXP(progress.nextLevelAt), progress.level + 1);
+      assert.equal(getLevelFromXP(progress.nextLevelAt - 1), progress.level);
     }
   });
 

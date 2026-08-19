@@ -29,7 +29,7 @@ export type SeedCategory = {
   activities: SeedActivity[];
 };
 
-export const TAXONOMY: SeedCategory[] = [
+const TAXONOMY: SeedCategory[] = [
   {
     slug: "software_development",
     name: "Software Development",

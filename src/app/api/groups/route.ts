@@ -1,11 +1,6 @@
 import { z } from "zod";
 import { route, ok, fail } from "@/lib/api";
 import { createGroup } from "@/lib/groups";
-import { getUserGroups } from "@/lib/queries";
-import { localDay } from "@/lib/dates";
-
-export const GET = route(async ({ user }) =>
-  ok({ groups: await getUserGroups(user.id, localDay(new Date(), user.timezone)) }));
 
 export const POST = route(
   async ({ user, body }) => {

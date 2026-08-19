@@ -15,8 +15,8 @@ function buildThresholds(maxLevel: number): number[] {
   return thresholds;
 }
 
-export const LEVEL_THRESHOLDS = buildThresholds(100);
-export const MAX_LEVEL = LEVEL_THRESHOLDS.length;
+const LEVEL_THRESHOLDS = buildThresholds(100);
+const MAX_LEVEL = LEVEL_THRESHOLDS.length;
 
 /** Level 1 at 0 XP. Binary search so this stays cheap at any XP. */
 export function getLevelFromXP(xp: number): number {
@@ -32,13 +32,13 @@ export function getLevelFromXP(xp: number): number {
 }
 
 /** Total lifetime XP required to reach `level`. */
-export function getXPForLevel(level: number): number {
+function getXPForLevel(level: number): number {
   const index = Math.min(Math.max(1, Math.floor(level)), MAX_LEVEL) - 1;
   return LEVEL_THRESHOLDS[index];
 }
 
 /** Total lifetime XP required to reach the level after `level`. */
-export function getXPForNextLevel(level: number): number | null {
+function getXPForNextLevel(level: number): number | null {
   if (level >= MAX_LEVEL) return null;
   return LEVEL_THRESHOLDS[level];
 }

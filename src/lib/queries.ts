@@ -24,16 +24,14 @@ export type LogRow = {
   scoring_version: number;
   created_at: string;
   local_day: string;
-  activity_id: string;
   activity_name: string;
   activity_icon: string;
-  category: string;
 };
 
 const LOG_SELECT = `
   SELECT l.id, l.raw_text, l.duration_minutes, l.xp, l.base_xp_per_hour, l.scoring_version,
-         l.created_at, l.local_day, l.activity_id,
-         a.name AS activity_name, a.icon AS activity_icon, a.category
+         l.created_at, l.local_day,
+         a.name AS activity_name, a.icon AS activity_icon
     FROM activity_logs l
     JOIN activities a ON a.id = l.activity_id`;
 
@@ -41,7 +39,7 @@ const LOG_SELECT = `
 export async function getTotals(userId: string, today: string) {
   const row = await get<{
     today: number; week: number; month: number; lifetime: number;
-    entries: number; distinct_activities: number; total_minutes: number;
+    entries: number; distinct_activities: number;
   }>(
     `SELECT
        COALESCE(SUM(CASE WHEN local_day = ?  THEN xp END), 0) AS today,
@@ -49,13 +47,12 @@ export async function getTotals(userId: string, today: string) {
        COALESCE(SUM(CASE WHEN local_day >= ? THEN xp END), 0) AS month,
        COALESCE(SUM(xp), 0)                                   AS lifetime,
        COUNT(*)                                               AS entries,
-       COUNT(DISTINCT activity_id)                            AS distinct_activities,
-       COALESCE(SUM(duration_minutes), 0)                     AS total_minutes
+       COUNT(DISTINCT activity_id)                            AS distinct_activities
      FROM activity_logs WHERE user_id = ?`,
     today, startOfWeek(today), startOfMonth(today), userId,
   );
   return row ?? {
-    today: 0, week: 0, month: 0, lifetime: 0, entries: 0, distinct_activities: 0, total_minutes: 0,
+    today: 0, week: 0, month: 0, lifetime: 0, entries: 0, distinct_activities: 0,
   };
 }
 
@@ -158,13 +155,13 @@ export async function getMomentum(userId: string, today: string) {
   };
 }
 
-export function getCategoryBreakdown(userId: string, since?: string) {
+export function getCategoryBreakdown(userId: string) {
   return all<{ category: string; xp: number; minutes: number }>(
     `SELECT a.category, SUM(l.xp) AS xp, SUM(l.duration_minutes) AS minutes
        FROM activity_logs l JOIN activities a ON a.id = l.activity_id
-      WHERE l.user_id = ? ${since ? "AND l.local_day >= ?" : ""}
+      WHERE l.user_id = ?
       GROUP BY a.category ORDER BY xp DESC`,
-    ...(since ? [userId, since] : [userId]),
+    userId,
   );
 }
 

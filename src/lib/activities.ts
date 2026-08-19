@@ -326,11 +326,16 @@ export async function deleteEntry(userId: string, logId: string): Promise<boolea
   return true;
 }
 
-/** Flat list for the manual activity picker. */
-export function activityOptions() {
-  return all<{ id: string; name: string; category: string; icon: string; base_xp_per_hour: number }>(
-    `SELECT id, name, category, icon, base_xp_per_hour
-       FROM activities WHERE status = 'active'
-      ORDER BY category, name`,
-  );
+/**
+ * Flat list for the manual activity picker.
+ *
+ * Served from the taxonomy cache rather than the database: the same ~111 rows
+ * are already in memory, so querying them again would be a round trip for data
+ * we hold. The map also strips the resolver's token index, which is internal.
+ */
+export async function activityOptions() {
+  return (await listActivities())
+    .map(({ id, name, category, icon, base_xp_per_hour }) =>
+      ({ id, name, category, icon, base_xp_per_hour }))
+    .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
 }
