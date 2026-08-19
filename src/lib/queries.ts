@@ -267,24 +267,6 @@ export function getGroupLeaderboard(
   );
 }
 
-/** Global leaderboard across all users. */
-export function getGlobalLeaderboard(
-  period: LeaderboardPeriod, today: string,
-): Promise<LeaderboardRow[]> {
-  return cached(`lb:global:${period}:${today}`, 30_000, () =>
-    all<LeaderboardRow>(
-      `SELECT u.id AS user_id, u.name, u.avatar_hue,
-              COALESCE(SUM(l.xp), 0) AS xp, COUNT(l.id) AS entries
-         FROM users u
-         LEFT JOIN activity_logs l ON l.user_id = u.id AND l.local_day >= ?
-        GROUP BY u.id, u.name, u.avatar_hue
-        ORDER BY xp DESC, u.name ASC
-        LIMIT 50`,
-      periodStart(period, today),
-    ),
-  );
-}
-
 export function getGroup(groupId: string) {
   return get<{ id: string; name: string; slug: string; description: string; emoji: string; invite_code: string; owner_id: string; created_at: string }>(
     `SELECT id, name, slug, description, emoji, invite_code, owner_id, created_at FROM groups WHERE id = ?`,

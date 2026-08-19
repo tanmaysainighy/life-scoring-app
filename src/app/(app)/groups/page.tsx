@@ -1,28 +1,16 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { getUserGroups, getGlobalLeaderboard, type LeaderboardPeriod } from "@/lib/queries";
+import { getUserGroups } from "@/lib/queries";
 import { localDay } from "@/lib/dates";
 import { GroupActions } from "@/components/GroupActions";
-import { Leaderboard } from "@/components/Leaderboard";
 import { Section } from "@/components/Section";
 
 export const metadata = { title: "Groups · LifeScore" };
 export const dynamic = "force-dynamic";
 
-const PERIODS: LeaderboardPeriod[] = ["today", "week", "month", "all"];
-
-export default async function GroupsPage({
-  searchParams,
-}: { searchParams: Promise<{ period?: string }> }) {
+export default async function GroupsPage() {
   const user = await requireUser();
-  const requested = (await searchParams).period as LeaderboardPeriod | undefined;
-  const period: LeaderboardPeriod = requested && PERIODS.includes(requested) ? requested : "week";
-  const today = localDay(new Date(), user.timezone);
-
-  const [groups, global] = await Promise.all([
-    getUserGroups(user.id, today),
-    getGlobalLeaderboard(period, today),
-  ]);
+  const groups = await getUserGroups(user.id, localDay(new Date(), user.timezone));
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -59,12 +47,6 @@ export default async function GroupsPage({
             <div className="mt-8"><GroupActions /></div>
           </Section>
         )}
-      </div>
-
-      <div className="enter mt-16" style={{ "--i": 2 } as React.CSSProperties}>
-        <Section title="Everyone">
-          <Leaderboard rows={global} period={period} basePath="/groups" currentUserId={user.id} />
-        </Section>
       </div>
     </div>
   );
